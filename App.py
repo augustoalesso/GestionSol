@@ -181,49 +181,8 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
 
 # ==========================================================
 # --- FUNCIONES DE INTERFAZ Y REPORTE ---
+# (Se mantienen iguales)
 # ==========================================================
-
-# Función para el formulario de administración de tipos de egreso
-def form_admin_tipos():
-    st.markdown("##### Tipos de Egreso")
-    with st.form("add_type_form", clear_on_submit=True, key="admin_type_sidebar"):
-        new_type_name = st.text_input("Añadir Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name_input")
-        submitted_type = st.form_submit_button("➕ Añadir Tipo")
-        
-        if submitted_type and new_type_name:
-            new_type_name = new_type_name.strip()
-            if new_type_name and new_type_name not in st.session_state.egreso_types:
-                st.session_state.egreso_types.append(new_type_name)
-                save_egreso_types(st.session_state.egreso_types) 
-                st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
-                st.success(f"Tipo '{new_type_name}' añadido.")
-            elif new_type_name in st.session_state.egreso_types:
-                st.warning(f"El tipo '{new_type_name}' ya existe.")
-            else:
-                st.error("Debe ingresar un nombre.")
-    st.caption(f"Actuales: {', '.join(st.session_state.egreso_types)}")
-
-# Función para el formulario de administración de proveedores
-def form_admin_proveedores():
-    st.markdown("##### Proveedores")
-    with st.form("add_provider_form", clear_on_submit=True, key="admin_provider_sidebar"):
-        new_provider_name = st.text_input("Añadir Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name_input")
-        submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
-        
-        if submitted_provider and new_provider_name:
-            new_provider_name = new_provider_name.strip()
-            if new_provider_name and new_provider_name not in st.session_state.proveedores:
-                st.session_state.proveedores.append(new_provider_name)
-                save_proveedores(st.session_state.proveedores)
-                st.session_state.proveedores = load_proveedores() # Recargar la lista ordenada
-                st.success(f"Proveedor '{new_provider_name}' añadido.")
-            elif new_provider_name in st.session_state.proveedores:
-                st.warning(f"El proveedor '{new_provider_name}' ya existe.")
-            else:
-                st.error("Debe ingresar un nombre.")
-    st.caption(f"Actuales: {', '.join(st.session_state.proveedores)}")
-
-# --- Funciones de Reporte (Se mantienen iguales) ---
 
 def generar_resumen_ventas(df):
     """Genera y muestra el reporte de ventas."""
@@ -353,7 +312,7 @@ if 'proveedores' not in st.session_state:
 with st.sidebar:
     st.header("Menú Principal")
     
-    # Nuevo Menú de Control (reemplaza a st.tabs)
+    # Menú de Control
     menu_selection = st.selectbox(
         "Seleccione la Vista:",
         options=["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"],
@@ -364,12 +323,47 @@ with st.sidebar:
     if menu_selection == "💸 Egresos (Gastos)":
         st.markdown("---")
         st.header("⚙️ Administración Rápida")
+        
+        # ----------------------------------------------------
+        # Lógica de Administración (Fuera de la función)
+        # ----------------------------------------------------
+        
+        st.subheader("Tipos de Egreso")
+        with st.form("add_type_form", clear_on_submit=True, key="admin_type_sidebar"):
+            new_type_name = st.text_input("Añadir Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name_input")
+            submitted_type = st.form_submit_button("➕ Añadir Tipo")
+            
+            if submitted_type and new_type_name:
+                new_type_name = new_type_name.strip()
+                if new_type_name and new_type_name not in st.session_state.egreso_types:
+                    st.session_state.egreso_types.append(new_type_name)
+                    save_egreso_types(st.session_state.egreso_types) 
+                    st.session_state.egreso_types = load_egreso_types()
+                    st.success(f"Tipo '{new_type_name}' añadido.")
+                elif new_type_name in st.session_state.egreso_types:
+                    st.warning(f"El tipo '{new_type_name}' ya existe.")
+                else:
+                    st.error("Debe ingresar un nombre.")
+        st.caption(f"Actuales: {', '.join(st.session_state.egreso_types)}")
         st.markdown("---")
         
-        # Estructura simplificada sin expander para evitar conflictos
-        form_admin_tipos() 
-        st.markdown("---")
-        form_admin_proveedores()
+        st.subheader("Proveedores")
+        with st.form("add_provider_form", clear_on_submit=True, key="admin_provider_sidebar"):
+            new_provider_name = st.text_input("Añadir Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name_input_prov") # Cambié el key
+            submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
+            
+            if submitted_provider and new_provider_name:
+                new_provider_name = new_provider_name.strip()
+                if new_provider_name and new_provider_name not in st.session_state.proveedores:
+                    st.session_state.proveedores.append(new_provider_name)
+                    save_proveedores(st.session_state.proveedores)
+                    st.session_state.proveedores = load_proveedores()
+                    st.success(f"Proveedor '{new_provider_name}' añadido.")
+                elif new_provider_name in st.session_state.proveedores:
+                    st.warning(f"El proveedor '{new_provider_name}' ya existe.")
+                else:
+                    st.error("Debe ingresar un nombre.")
+        st.caption(f"Actuales: {', '.join(st.session_state.proveedores)}")
         st.markdown("---")
 
 
