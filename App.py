@@ -32,31 +32,43 @@ COLUMNAS_INPUT_FORM = ['Importe de venta', 'Medio de cobro', 'Factura?', 'Socio'
 # ==========================================================
 
 def load_data():
-    """Carga el DataFrame histórico o crea uno vacío si no existe."""
+    """Carga el DataFrame histórico o crea uno vacío si no existe, manejando codificación y separadores."""
     try:
-        # Intentamos leer con coma o punto y coma (para compatibilidad)
+        df = None
+        
+        # 1. Intentar con codificación LATIN-1 (común en Excel/Windows) y separador coma
         try:
-            df = pd.read_csv(HISTORICO_FILE, sep=';')
+            df = pd.read_csv(HISTORICO_FILE, encoding='latin-1', sep=',')
         except Exception:
-            df = pd.read_csv(HISTORICO_FILE, sep=',')
-            
-        # Asegurarse de que 'Fecha' sea un objeto datetime.date
-        df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
-        return df
+            # 2. Intentar con codificación UTF-8 y separador punto y coma
+            try:
+                df = pd.read_csv(HISTORICO_FILE, encoding='utf-8', sep=';')
+            except Exception:
+                # 3. Intentar codificación UTF-8 y separador coma (el estándar)
+                df = pd.read_csv(HISTORICO_FILE, encoding='utf-8', sep=',')
+
+        # Si se logra cargar, limpia el DataFrame
+        if df is not None:
+            # Asegurarse de que 'Fecha' sea un objeto datetime.date
+            df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+            # Limpiar filas completamente vacías
+            df = df.dropna(how='all')
+            return df
+
     except FileNotFoundError:
         st.error("Error: Archivo de historial no encontrado. Asegúrese de que existe 'ventas_historico.csv'.")
-        # Si falla la carga, retorna un DataFrame vacío con las columnas finales esperadas
-        return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
     except Exception as e:
         st.error(f"Error al cargar el historial CSV: {e}")
-        return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
+
+    # Si la carga falla por cualquier motivo, retorna un DataFrame vacío con las columnas finales esperadas
+    return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
+
 
 def save_data(df):
-    """Guarda el DataFrame en el archivo histórico usando UTF-8."""
+    """Guarda el DataFrame en el archivo histórico usando el estándar UTF-8 y coma como separador."""
     try:
-        df.to_csv(HISTORICO_FILE, index=False, sep=',') # Usamos coma como separador estándar
-        # Nota: La persistencia real en Streamlit Cloud requiere GitHub/otro servicio, 
-        # pero para el demo guardamos en el mismo archivo del repositorio.
+        # Se guarda siempre en formato estándar (coma, UTF-8)
+        df.to_csv(HISTORICO_FILE, index=False, sep=',')
     except Exception as e:
         st.error(f"Error al guardar los datos: {e}")
 
@@ -81,7 +93,7 @@ def add_new_sale(fecha, importe, medio, factura, socio):
     new_row_df = pd.DataFrame([new_data])
     df_actualizado = pd.concat([df_historico, new_row_df], ignore_index=True)
 
-    # Limpiar columnas por si acaso
+    # Limpiar y asegurar tipos de dato
     df_actualizado['Importe de venta'] = pd.to_numeric(df_actualizado['Importe de venta'], errors='coerce')
     df_final = df_actualizado.dropna(subset=['Importe de venta'])
     
