@@ -27,6 +27,7 @@ COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Impor
 
 # ==========================================================
 # --- FUNCIONES DE PERSISTENCIA DE CONFIGURACIÓN ---
+# (Se mantienen iguales)
 # ==========================================================
 
 def load_config(file_path, default_list):
@@ -184,7 +185,7 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
 # Función para el formulario de administración de tipos de egreso
 def form_admin_tipos():
     st.subheader("Tipos de Egreso")
-    with st.form("add_type_form", clear_on_submit=True):
+    with st.form("add_type_form", clear_on_submit=True, key="admin_type_sidebar"):
         new_type_name = st.text_input("Añadir nuevo Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name")
         submitted_type = st.form_submit_button("➕ Añadir Tipo")
         
@@ -204,7 +205,7 @@ def form_admin_tipos():
 # Función para el formulario de administración de proveedores
 def form_admin_proveedores():
     st.subheader("Proveedores")
-    with st.form("add_provider_form", clear_on_submit=True):
+    with st.form("add_provider_form", clear_on_submit=True, key="admin_provider_sidebar"):
         new_provider_name = st.text_input("Añadir nuevo Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name")
         submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
         
@@ -221,6 +222,7 @@ def form_admin_proveedores():
                 st.error("Debe ingresar un nombre para el nuevo proveedor.")
     st.caption(f"Proveedores Actuales: {', '.join(st.session_state.proveedores)}")
 
+# --- Funciones de Reporte (Se mantienen iguales) ---
 
 def generar_resumen_ventas(df):
     """Genera y muestra el reporte de ventas."""
@@ -230,8 +232,6 @@ def generar_resumen_ventas(df):
 
     st.subheader(f"📊 Reporte Acumulado de Ventas")
     st.markdown("---")
-    
-    # ... (El resto del reporte de ventas se mantiene igual)
 
     total_ventas = df['Importe de venta'].sum()
     total_facturado = df[df['Facturado'] == 'Facturado']['Importe de venta'].sum()
@@ -245,14 +245,12 @@ def generar_resumen_ventas(df):
 
     col_resumen1, col_resumen2 = st.columns(2)
 
-    # Resumen por Socio
     df_socio = df.groupby('Socio')['Importe de venta'].sum().reset_index()
     df_socio.columns = ['Socio', 'Venta Total']
     with col_resumen1:
         st.subheader("👥 Resumen por Socio")
         st.dataframe(df_socio.style.format({'Venta Total': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
-    # Resumen por Facturación
     df_fact = df.groupby('Facturado')['Importe de venta'].sum().reset_index()
     df_fact.columns = ['Estado', 'Venta Total']
     with col_resumen2:
@@ -285,8 +283,6 @@ def generar_reporte_egresos(df):
     st.subheader("📅 Pendientes de Pago (Egresos)")
     st.markdown("---")
     
-    # ... (El resto del reporte de egresos se mantiene igual)
-
     df['Vencido'] = df['Fecha_Vencimiento'] < datetime.now().date()
     df_pendientes_hoy = df[~df['Vencido']] 
     
@@ -352,50 +348,41 @@ if 'egreso_types' not in st.session_state:
 if 'proveedores' not in st.session_state:
     st.session_state.proveedores = load_proveedores()
 
-# Usamos session_state para mantener el estado de la pestaña activa (para el sidebar)
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "Ventas" 
-
-# --- Definición de Pestañas ---
-tab_ventas, tab_egresos = st.tabs(["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"])
-
-# Código para actualizar la pestaña activa al hacer clic
-# (Esto se hace con callbacks o guardando el estado al cambiar, pero la forma más simple es usar un botón o el contenedor del tab)
-
-# -----------------------------------
-# --- BARRA LATERAL (ADMINISTRACIÓN) ---
-# -----------------------------------
-
+# --- BARRA LATERAL (MENÚ PRINCIPAL Y ADMINISTRACIÓN) ---
 with st.sidebar:
-    st.header("⚙️ Gestión Rápida")
+    st.header("Menú Principal")
     
-    # Condición: Mostrar administración solo si la pestaña de Egresos está activa
-    # Nota: Streamlit no tiene un hook fácil para saber qué pestaña está ACTIVA. 
-    # Usaremos una variable de sesión o un control simple para simular esto.
+    # Nuevo Menú de Control (reemplaza a st.tabs)
+    menu_selection = st.selectbox(
+        "Seleccione la Vista:",
+        options=["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"],
+        key="main_menu_select"
+    )
 
-    # Simulación de control de estado: si el usuario hace clic en el botón de Egresos, mostramos la administración.
-    
-    if st.session_state.get('active_tab_sidebar') == 'Egresos':
-        st.subheader("Administración (Egresos)")
+    # Mostrar Administración SOLO si la vista seleccionada es Egresos
+    if menu_selection == "💸 Egresos (Gastos)":
         st.markdown("---")
-        form_admin_tipos()
+        st.header("⚙️ Administración Rápida")
+        
+        st.subheader("Tipos de Egreso")
+        with st.expander("➕ Añadir/Ver Tipos de Egreso"):
+            form_admin_tipos()
+        
+        st.subheader("Proveedores")
+        with st.expander("➕ Añadir/Ver Proveedores"):
+            form_admin_proveedores()
         st.markdown("---")
-        form_admin_proveedores()
-        st.markdown("---")
 
 
-# -------------------------
-# --- PESTAÑA DE VENTAS ---
-# -------------------------
+# --- CONTENIDO PRINCIPAL ---
 
-with tab_ventas:
-    st.session_state.active_tab_sidebar = "Ventas" # Actualizar estado al entrar a la pestaña
+if menu_selection == "💰 Ventas (Ingresos)":
     st.header("Registro y Reporte de Ventas")
 
     with st.form("registro_venta_form", clear_on_submit=True):
         st.subheader("1. Registrar Venta (Agregada)")
         
-        # CAMBIO 1: Socio primero
+        # CAMBIO 1: Socio y Factura primero (Reorganizado)
         col_soc_first, col_fac_first = st.columns(2)
         with col_soc_first:
             socio_options = MAPEO_SOCIO
@@ -429,12 +416,7 @@ with tab_ventas:
     else:
         generar_resumen_ventas(load_ventas_data())
 
-# --------------------------
-# --- PESTAÑA DE EGRESOS ---
-# --------------------------
-
-with tab_egresos:
-    st.session_state.active_tab_sidebar = "Egresos" # Actualizar estado al entrar a la pestaña
+elif menu_selection == "💸 Egresos (Gastos)":
     st.header("Registro y Control de Gastos/Compras")
 
     # Formulario de Registro de Egreso
@@ -473,6 +455,6 @@ with tab_egresos:
                     tipo=tipo_input, proveedor=proveedor_input, importe=importe_input, vencimiento=vencimiento_input, factura=factura_to_save
                 )
             st.success(f"Egreso a {proveedor_input} por ${importe_input:,.2f} registrado exitosamente.")
-            generar_reporte_egresos(df_egresos_actualizado)
+            generate_report_egresos(df_egresos_actualizado)
     else:
         generar_reporte_egresos(load_egresos_data())
