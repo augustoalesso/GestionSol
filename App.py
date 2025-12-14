@@ -368,11 +368,11 @@ with st.sidebar:
                 save_egreso_types(st.session_state.egreso_types) 
                 st.session_state.egreso_types = load_egreso_types()
                 st.success(f"Tipo '{new_type_name}' añadido.")
-                st.experimental_rerun()
             elif new_type_name in st.session_state.egreso_types:
                 st.warning(f"El tipo '{new_type_name}' ya existe.")
             else:
                 st.error("Debe ingresar un nombre.")
+            st.experimental_rerun() # FORZAR RECARGA AQUI
         st.caption(f"Actuales: {', '.join(st.session_state.egreso_types)}")
         st.markdown("---")
         
@@ -386,11 +386,11 @@ with st.sidebar:
                 save_proveedores(st.session_state.proveedores)
                 st.session_state.proveedores = load_proveedores()
                 st.success(f"Proveedor '{new_provider_name}' añadido.")
-                st.experimental_rerun()
             elif new_provider_name in st.session_state.proveedores:
                 st.warning(f"El proveedor '{new_provider_name}' ya existe.")
             else:
                 st.error("Debe ingresar un nombre.")
+            st.experimental_rerun() # FORZAR RECARGA AQUI
         st.caption(f"Actuales: {', '.join(st.session_state.proveedores)}")
         st.markdown("---")
         
@@ -483,47 +483,52 @@ elif menu_selection == "💸 Egresos (Gastos)":
     st.header("Registro y Control de Gastos/Compras")
     
     # 1. Lógica de Inicialización para el filtrado (se ejecuta en cada renderizado)
-    # --------------------------------------------------------------------------
-    
-    # Obtener el valor actual del selectbox de proveedor (si existe)
     current_provider_selected = st.session_state.get('e_proveedor_input', None)
 
-    # Si no se ha seleccionado nada, usar el primer proveedor por defecto
     if current_provider_selected is None and st.session_state.proveedores:
         current_provider_selected = st.session_state.proveedores[0]
 
-    # Aplicar el filtro basado en el proveedor *actual* seleccionado (o por defecto)
     if current_provider_selected and current_provider_selected in st.session_state.proveedor_tipo_map:
         st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[current_provider_selected]
     else:
         st.session_state.filtered_egreso_types = st.session_state.egreso_types
+    
+    # Aseguramos que el estado del filtro esté cargado
+    if 'filtered_egreso_types' not in st.session_state:
+        st.session_state.filtered_egreso_types = st.session_state.egreso_types
 
     # --------------------------------------------------------------------------
     
-    # Función para forzar el filtro y re-renderizar (usada al final del formulario)
-    def update_and_rerun():
-        # Esta función se llama después de que el usuario interactúa con el proveedor.
-        # No se llama desde on_change, sino desde el st.form_submit_button.
-        # En este caso, simplemente necesitamos la lógica de re-renderizado para forzar
-        # que el filtro se aplique en el siguiente ciclo.
-        st.experimental_rerun()
+    # Función para actualizar el filtro al cambiar el proveedor (usada en on_change)
+    def update_filter_and_reset_type():
+        selected_provider = st.session_state.e_proveedor_input
+        if selected_provider in st.session_state.proveedor_tipo_map:
+            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[selected_provider]
+        else:
+            st.session_state.filtered_egreso_types = st.session_state.egreso_types
+        
+        # Esto previene que el selectbox de Tipo de Egreso intente cargar un valor obsoleto
+        if 'e_tipo_input' in st.session_state:
+             st.session_state.e_tipo_input = (st.session_state.filtered_egreso_types[0] 
+                                             if st.session_state.filtered_egreso_types else None)
+
 
     # Formulario de Registro de Egreso
     with st.form("registro_egreso_form", clear_on_submit=True):
         st.subheader("1. Registrar Egreso")
         
-        # Proveedor (Lista dinámica) - SIN on_change para evitar el error!
+        # Proveedor (Usamos on_change para que el filtro sea instantáneo *dentro* del formulario)
         proveedor_input = st.selectbox(
             "🏢 Nombre del Proveedor", 
             st.session_state.proveedores, 
             key="e_proveedor_input",
-            # ELIMINAMOS on_change=filter_egreso_types
+            on_change=update_filter_and_reset_type 
         )
         
         # Tipo de egreso (Lista dinámica FILTRADA)
         tipo_input = st.selectbox(
             "📝 Tipo de Egreso", 
-            st.session_state.filtered_egreso_types, # Usa la lista FILTRADA
+            st.session_state.filtered_egreso_types, 
             key="e_tipo_input"
         )
         
