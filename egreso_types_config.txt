@@ -2,3 +2,5 @@ Mercadería
 Servicio
 Empleado
 Otros
+IVA
+Ganancias
