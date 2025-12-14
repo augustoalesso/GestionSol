@@ -7,6 +7,7 @@ from datetime import datetime
 
 # ==========================================================
 # --- CONFIGURACIÓN Y CONSTANTES ---
+# (Se mantienen iguales)
 # ==========================================================
 
 VENTAS_FILE = 'ventas_historico.csv'
@@ -184,9 +185,9 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
 
 # Función para el formulario de administración de tipos de egreso
 def form_admin_tipos():
-    st.subheader("Tipos de Egreso")
+    st.markdown("##### Tipos de Egreso")
     with st.form("add_type_form", clear_on_submit=True, key="admin_type_sidebar"):
-        new_type_name = st.text_input("Añadir nuevo Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name")
+        new_type_name = st.text_input("Añadir Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name_input")
         submitted_type = st.form_submit_button("➕ Añadir Tipo")
         
         if submitted_type and new_type_name:
@@ -195,18 +196,18 @@ def form_admin_tipos():
                 st.session_state.egreso_types.append(new_type_name)
                 save_egreso_types(st.session_state.egreso_types) 
                 st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
-                st.success(f"Tipo '{new_type_name}' añadido y guardado.")
+                st.success(f"Tipo '{new_type_name}' añadido.")
             elif new_type_name in st.session_state.egreso_types:
                 st.warning(f"El tipo '{new_type_name}' ya existe.")
             else:
-                st.error("Debe ingresar un nombre para el nuevo tipo de egreso.")
-    st.caption(f"Tipos Actuales: {', '.join(st.session_state.egreso_types)}")
+                st.error("Debe ingresar un nombre.")
+    st.caption(f"Actuales: {', '.join(st.session_state.egreso_types)}")
 
 # Función para el formulario de administración de proveedores
 def form_admin_proveedores():
-    st.subheader("Proveedores")
+    st.markdown("##### Proveedores")
     with st.form("add_provider_form", clear_on_submit=True, key="admin_provider_sidebar"):
-        new_provider_name = st.text_input("Añadir nuevo Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name")
+        new_provider_name = st.text_input("Añadir Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name_input")
         submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
         
         if submitted_provider and new_provider_name:
@@ -215,12 +216,12 @@ def form_admin_proveedores():
                 st.session_state.proveedores.append(new_provider_name)
                 save_proveedores(st.session_state.proveedores)
                 st.session_state.proveedores = load_proveedores() # Recargar la lista ordenada
-                st.success(f"Proveedor '{new_provider_name}' añadido y guardado.")
+                st.success(f"Proveedor '{new_provider_name}' añadido.")
             elif new_provider_name in st.session_state.proveedores:
                 st.warning(f"El proveedor '{new_provider_name}' ya existe.")
             else:
-                st.error("Debe ingresar un nombre para el nuevo proveedor.")
-    st.caption(f"Proveedores Actuales: {', '.join(st.session_state.proveedores)}")
+                st.error("Debe ingresar un nombre.")
+    st.caption(f"Actuales: {', '.join(st.session_state.proveedores)}")
 
 # --- Funciones de Reporte (Se mantienen iguales) ---
 
@@ -363,14 +364,12 @@ with st.sidebar:
     if menu_selection == "💸 Egresos (Gastos)":
         st.markdown("---")
         st.header("⚙️ Administración Rápida")
+        st.markdown("---")
         
-        st.subheader("Tipos de Egreso")
-        with st.expander("➕ Añadir/Ver Tipos de Egreso"):
-            form_admin_tipos()
-        
-        st.subheader("Proveedores")
-        with st.expander("➕ Añadir/Ver Proveedores"):
-            form_admin_proveedores()
+        # Estructura simplificada sin expander para evitar conflictos
+        form_admin_tipos() 
+        st.markdown("---")
+        form_admin_proveedores()
         st.markdown("---")
 
 
@@ -455,6 +454,6 @@ elif menu_selection == "💸 Egresos (Gastos)":
                     tipo=tipo_input, proveedor=proveedor_input, importe=importe_input, vencimiento=vencimiento_input, factura=factura_to_save
                 )
             st.success(f"Egreso a {proveedor_input} por ${importe_input:,.2f} registrado exitosamente.")
-            generate_report_egresos(df_egresos_actualizado)
+            generar_reporte_egresos(df_egresos_actualizado)
     else:
         generar_reporte_egresos(load_egresos_data())
