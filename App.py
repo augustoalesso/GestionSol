@@ -7,13 +7,14 @@ from datetime import datetime
 
 # ==========================================================
 # --- CONFIGURACIÓN Y CONSTANTES ---
-# (Se mantienen iguales)
 # ==========================================================
 
 VENTAS_FILE = 'ventas_historico.csv'
 EGRESOS_FILE = 'egresos_historico.csv'
 EGRESO_TYPES_CONFIG_FILE = 'egreso_types_config.txt'
 PROVEEDOR_CONFIG_FILE = 'proveedor_config.txt'
+# NUEVO ARCHIVO DE CONFIGURACIÓN
+PROVEEDOR_TIPO_MAP_FILE = 'proveedor_tipo_map.txt'
 
 # Mapeo de abreviaturas para Ventas
 MAPEO_MEDIO_COBRO = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
@@ -28,7 +29,6 @@ COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Impor
 
 # ==========================================================
 # --- FUNCIONES DE PERSISTENCIA DE CONFIGURACIÓN ---
-# (Se mantienen iguales)
 # ==========================================================
 
 def load_config(file_path, default_list):
@@ -68,10 +68,45 @@ def load_proveedores():
 def save_proveedores(proveedores_list):
     save_config(PROVEEDOR_CONFIG_FILE, proveedores_list)
 
+# NUEVAS FUNCIONES PARA EL MAPEO PROVEEDOR-TIPO
+def load_proveedor_tipo_map():
+    """Carga el diccionario de mapeo {Proveedor: [Tipo1, Tipo2]}"""
+    try:
+        mapping = {}
+        with open(PROVEEDOR_TIPO_MAP_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    # Formato: Proveedor=Tipo1,Tipo2
+                    provider, types_csv = line.split('=', 1)
+                    mapping[provider] = [t.strip() for t in types_csv.split(',') if t.strip()]
+                except ValueError:
+                    # Ignorar líneas mal formadas
+                    continue
+        return mapping
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        st.error(f"Error al cargar mapeo Proveedor-Tipo: {e}")
+        return {}
+
+def save_proveedor_tipo_map(mapping):
+    """Guarda el diccionario de mapeo en el archivo."""
+    try:
+        with open(PROVEEDOR_TIPO_MAP_FILE, 'w') as f:
+            for provider, types_list in mapping.items():
+                if types_list:
+                    types_csv = ",".join(types_list)
+                    f.write(f"{provider}={types_csv}\n")
+    except Exception as e:
+        st.error(f"Error al guardar mapeo Proveedor-Tipo: {e}")
+
 
 # ==========================================================
 # --- FUNCIONES DE PERSISTENCIA: VENTAS/EGRESOS ---
-# (Se mantienen iguales)
+# (El resto de funciones de persistencia de Ventas y Egresos no cambian)
 # ==========================================================
 
 def load_ventas_data():
@@ -301,33 +336,32 @@ st.set_page_config(page_title="GestionSol - Finanzas", layout="wide")
 
 st.title("GestionSol: Finanzas Diarias 📊")
 
-# Inicializar o cargar la lista de tipos de egreso y proveedores
+# Inicializar o cargar la lista de tipos de egreso, proveedores y el mapeo
 if 'egreso_types' not in st.session_state:
     st.session_state.egreso_types = load_egreso_types()
 
 if 'proveedores' not in st.session_state:
     st.session_state.proveedores = load_proveedores()
 
+# NUEVO ESTADO: Mapeo
+if 'proveedor_tipo_map' not in st.session_state:
+    st.session_state.proveedor_tipo_map = load_proveedor_tipo_map()
+
 # --- BARRA LATERAL (MENÚ PRINCIPAL Y ADMINISTRACIÓN) ---
 with st.sidebar:
     st.header("Menú Principal")
     
-    # Menú de Control
     menu_selection = st.selectbox(
         "Seleccione la Vista:",
         options=["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"],
         key="main_menu_select"
     )
 
-    # Mostrar Administración SOLO si la vista seleccionada es Egresos
     if menu_selection == "💸 Egresos (Gastos)":
         st.markdown("---")
         st.header("⚙️ Administración Rápida")
         
-        # ----------------------------------------------------
-        # Lógica de Administración (USANDO BOTONES Y TEXTO)
-        # ----------------------------------------------------
-        
+        # Administración de Tipos de Egreso
         st.subheader("Tipos de Egreso")
         new_type_name = st.text_input("Nombre del Nuevo Tipo:", key="new_type_name_input")
         if st.button("➕ Añadir Tipo", key="add_type_button"):
@@ -335,7 +369,7 @@ with st.sidebar:
             if new_type_name and new_type_name not in st.session_state.egreso_types:
                 st.session_state.egreso_types.append(new_type_name)
                 save_egreso_types(st.session_state.egreso_types) 
-                st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
+                st.session_state.egreso_types = load_egreso_types() 
                 st.success(f"Tipo '{new_type_name}' añadido.")
             elif new_type_name in st.session_state.egreso_types:
                 st.warning(f"El tipo '{new_type_name}' ya existe.")
@@ -344,6 +378,7 @@ with st.sidebar:
         st.caption(f"Actuales: {', '.join(st.session_state.egreso_types)}")
         st.markdown("---")
         
+        # Administración de Proveedores
         st.subheader("Proveedores")
         new_provider_name = st.text_input("Nombre del Nuevo Proveedor:", key="new_provider_name_input_prov")
         if st.button("➕ Añadir Proveedor", key="add_provider_button"):
@@ -351,7 +386,7 @@ with st.sidebar:
             if new_provider_name and new_provider_name not in st.session_state.proveedores:
                 st.session_state.proveedores.append(new_provider_name)
                 save_proveedores(st.session_state.proveedores)
-                st.session_state.proveedores = load_proveedores() # Recargar la lista ordenada
+                st.session_state.proveedores = load_proveedores()
                 st.success(f"Proveedor '{new_provider_name}' añadido.")
             elif new_provider_name in st.session_state.proveedores:
                 st.warning(f"El proveedor '{new_provider_name}' ya existe.")
@@ -359,27 +394,72 @@ with st.sidebar:
                 st.error("Debe ingresar un nombre.")
         st.caption(f"Actuales: {', '.join(st.session_state.proveedores)}")
         st.markdown("---")
+        
+        # NUEVA SECCIÓN: Mapeo Proveedor-Tipo
+        st.subheader("🔗 Mapear Proveedor-Tipo")
+        with st.form("map_form", clear_on_submit=False, key="map_provider_type_form"):
+            provider_to_map = st.selectbox(
+                "Seleccionar Proveedor:", 
+                st.session_state.proveedores,
+                key="map_provider_select"
+            )
+            
+            # Tipos actualmente seleccionados para el proveedor (si existen)
+            default_types = st.session_state.proveedor_tipo_map.get(provider_to_map, [])
+
+            selected_types = st.multiselect(
+                "Asociar Tipos de Egreso:",
+                st.session_state.egreso_types,
+                default=default_types,
+                key="map_types_multiselect"
+            )
+
+            submitted_map = st.form_submit_button("💾 Guardar Asociación")
+            
+            if submitted_map:
+                if selected_types:
+                    st.session_state.proveedor_tipo_map[provider_to_map] = selected_types
+                    save_proveedor_tipo_map(st.session_state.proveedor_tipo_map)
+                    st.success(f"Asociación guardada para '{provider_to_map}'.")
+                    # Forzar recarga del widget para mostrar los defaults actualizados
+                    st.experimental_rerun()
+                elif provider_to_map in st.session_state.proveedor_tipo_map:
+                    # Si deselecciona todo, lo borramos del mapa
+                    del st.session_state.proveedor_tipo_map[provider_to_map]
+                    save_proveedor_tipo_map(st.session_state.proveedor_tipo_map)
+                    st.success(f"Asociación eliminada para '{provider_to_map}'.")
+                    st.experimental_rerun()
+                else:
+                    st.info("No se seleccionó ningún tipo para guardar.")
+        
+        st.caption("Asociaciones existentes:")
+        if st.session_state.proveedor_tipo_map:
+            for p, types in st.session_state.proveedor_tipo_map.items():
+                st.caption(f"**{p}**: {', '.join(types)}")
+        else:
+            st.caption("Ninguna asociación creada.")
+        
+        st.markdown("---")
 
 
 # --- CONTENIDO PRINCIPAL ---
 
 if menu_selection == "💰 Ventas (Ingresos)":
+    # (El contenido de Ventas se mantiene igual)
     st.header("Registro y Reporte de Ventas")
 
     with st.form("registro_venta_form", clear_on_submit=True):
         st.subheader("1. Registrar Venta (Agregada)")
         
-        # CAMBIO 1: Socio y Factura primero (Reorganizado)
         col_soc_first, col_fac_first = st.columns(2)
         with col_soc_first:
             socio_options = MAPEO_SOCIO
-            # SELECCIÓN DEL SOCIO ES LO PRIMERO
             socio_input = st.radio("👤 Socio Responsable", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
         with col_fac_first:
             factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="v_factura_input")
             factura_to_save = 'f' if factura_input == 'f' else '' 
         
-        st.markdown("---") # Separador visual
+        st.markdown("---")
 
         fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
         importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="v_importe_input")
@@ -406,15 +486,46 @@ if menu_selection == "💰 Ventas (Ingresos)":
 elif menu_selection == "💸 Egresos (Gastos)":
     st.header("Registro y Control de Gastos/Compras")
 
+    # Función de callback para filtrar los tipos al cambiar el proveedor
+    def filter_egreso_types():
+        selected_provider = st.session_state.e_proveedor_input
+        if selected_provider in st.session_state.proveedor_tipo_map:
+            # Si hay mapeo, usamos solo los tipos asociados
+            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[selected_provider]
+        else:
+            # Si no hay mapeo, usamos todos los tipos
+            st.session_state.filtered_egreso_types = st.session_state.egreso_types
+            
+        # Limpiar la selección de tipo anterior para evitar errores si el tipo ya no existe
+        if 'e_tipo_input' in st.session_state:
+            del st.session_state['e_tipo_input']
+        
+        # Necesitamos la lista filtrada de opciones para el selectbox
+        # NOTA: st.session_state.filtered_egreso_types se crea y usa aquí
+
+    # Inicializar la lista filtrada (por defecto son todos)
+    if 'filtered_egreso_types' not in st.session_state:
+        st.session_state.filtered_egreso_types = st.session_state.egreso_types
+
+
     # Formulario de Registro de Egreso
     with st.form("registro_egreso_form", clear_on_submit=True):
         st.subheader("1. Registrar Egreso")
         
-        # Proveedor (Lista dinámica)
-        proveedor_input = st.selectbox("🏢 Nombre del Proveedor", st.session_state.proveedores, key="e_proveedor_input")
+        # Proveedor (Lista dinámica) - Usa el callback para filtrar los tipos
+        proveedor_input = st.selectbox(
+            "🏢 Nombre del Proveedor", 
+            st.session_state.proveedores, 
+            key="e_proveedor_input", 
+            on_change=filter_egreso_types
+        )
         
-        # Tipo de egreso (Lista dinámica)
-        tipo_input = st.selectbox("📝 Tipo de Egreso", st.session_state.egreso_types, key="e_tipo_input")
+        # Tipo de egreso (Lista dinámica FILTRADA)
+        tipo_input = st.selectbox(
+            "📝 Tipo de Egreso", 
+            st.session_state.filtered_egreso_types, # Usa la lista FILTRADA
+            key="e_tipo_input"
+        )
         
         importe_input = st.number_input("💵 Importe a Pagar", min_value=0.0, step=0.01, format="%.2f", key="e_importe_input")
 
@@ -436,6 +547,8 @@ elif menu_selection == "💸 Egresos (Gastos)":
             st.error("Debe ingresar un importe válido.")
         elif not proveedor_input:
             st.error("Debe seleccionar un proveedor.")
+        elif not tipo_input:
+             st.error("Debe seleccionar un tipo de egreso.")
         else:
             with st.spinner("Guardando egreso..."):
                 df_egresos_actualizado = add_new_egreso(
