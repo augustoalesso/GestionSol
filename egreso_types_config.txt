@@ -1,0 +1,4 @@
+Mercadería
+Servicio
+Empleado
+Otros
