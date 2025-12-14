@@ -11,16 +11,49 @@ from datetime import datetime
 
 VENTAS_FILE = 'ventas_historico.csv'
 EGRESOS_FILE = 'egresos_historico.csv'
+EGRESO_TYPES_CONFIG_FILE = 'egreso_types_config.txt' # Nuevo archivo de persistencia para tipos
 
 # Mapeo de abreviaturas para Ventas
 MAPEO_MEDIO_COBRO = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
 MAPEO_SOCIO = {'f': 'Fernando', 'n': 'Ignacio (Nacho)'}
 COLUMNAS_VENTAS_FINALES = ['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio']
 
-# Mapeo de tipos para Egresos
-MAPEO_TIPO_EGRESO = {'m': 'Mercadería', 's': 'Servicio/Gasto'}
+# Tipos de Egreso predeterminados
+DEFAULT_EGRESO_TYPES = ['Mercadería', 'Servicio', 'Empleado', 'Otros']
 COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Importe', 'Fecha_Vencimiento', 'Facturado']
 
+
+# ==========================================================
+# --- FUNCIONES DE PERSISTENCIA DE CONFIGURACIÓN ---
+# ==========================================================
+
+def load_egreso_types():
+    """Carga los tipos de egreso desde el archivo de configuración o usa los predeterminados."""
+    try:
+        with open(EGRESO_TYPES_CONFIG_FILE, 'r') as f:
+            # Lee líneas no vacías y elimina el espacio en blanco
+            types = [line.strip() for line in f if line.strip()]
+        if not types:
+            return DEFAULT_EGRESO_TYPES
+        return types
+    except FileNotFoundError:
+        # Si el archivo no existe, crea uno con los valores por defecto
+        save_egreso_types(DEFAULT_EGRESO_TYPES)
+        return DEFAULT_EGRESO_TYPES
+    except Exception as e:
+        st.error(f"Error al cargar tipos de egreso: {e}")
+        return DEFAULT_EGRESO_TYPES
+
+def save_egreso_types(types_list):
+    """Guarda la lista actual de tipos de egreso en el archivo de configuración."""
+    try:
+        # Usa set() para eliminar duplicados y sorted() para ordenarlos
+        unique_sorted_types = sorted(list(set(types_list)))
+        with open(EGRESO_TYPES_CONFIG_FILE, 'w') as f:
+            for type_name in unique_sorted_types:
+                f.write(f"{type_name}\n")
+    except Exception as e:
+        st.error(f"Error al guardar tipos de egreso: {e}")
 
 # ==========================================================
 # --- FUNCIONES DE PERSISTENCIA: VENTAS ---
@@ -30,7 +63,6 @@ def load_ventas_data():
     """Carga el DataFrame histórico de ventas o crea uno vacío."""
     try:
         df = None
-        # Intenta tres combinaciones de codificación/separador para robustez
         for encoding, sep in [('latin-1', ','), ('utf-8', ';'), ('utf-8', ',')]:
             try:
                 df = pd.read_csv(VENTAS_FILE, encoding=encoding, sep=sep)
@@ -81,14 +113,13 @@ def add_new_sale(fecha, importe, medio, factura, socio):
 
 
 # ==========================================================
-# --- FUNCIONES DE PERSISTENCIA: EGRESOS (NUEVAS) ---
+# --- FUNCIONES DE PERSISTENCIA: EGRESOS ---
 # ==========================================================
 
 def load_egresos_data():
     """Carga el DataFrame histórico de egresos o crea uno vacío."""
     try:
         df = None
-        # Intenta tres combinaciones de codificación/separador para robustez
         for encoding, sep in [('latin-1', ','), ('utf-8', ';'), ('utf-8', ',')]:
             try:
                 df = pd.read_csv(EGRESOS_FILE, encoding=encoding, sep=sep)
@@ -119,7 +150,7 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
     df_historico = load_egresos_data()
     
     facturado_str = 'Facturado' if factura == 'f' else 'No Facturado'
-    tipo_str = MAPEO_TIPO_EGRESO.get(tipo, 'Otro')
+    tipo_str = tipo # Ahora es el nombre completo del tipo (Ej: 'Mercadería')
 
     new_data = {
         'Fecha_Registro': datetime.now().date(),
@@ -142,6 +173,7 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
 
 # ==========================================================
 # --- FUNCIONES DE REPORTE ---
+# (Se mantienen iguales)
 # ==========================================================
 
 def generar_resumen_ventas(df):
@@ -205,11 +237,11 @@ def generar_reporte_egresos(df):
     st.subheader("📅 Pendientes de Pago (Egresos)")
     st.markdown("---")
     
-    # 1. Filtro y KPIs
     df['Vencido'] = df['Fecha_Vencimiento'] < datetime.now().date()
-    df_pendientes = df[~df['Vencido']] # Muestra todo lo que no está vencido
+    # No filtramos por vencido aquí para que el total pendiente sea solo lo que aún no vence
+    df_pendientes_hoy = df[~df['Vencido']] 
     
-    total_importe = df_pendientes['Importe'].sum()
+    total_importe = df_pendientes_hoy['Importe'].sum()
     total_vencido = df[df['Vencido']]['Importe'].sum()
 
     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
@@ -219,31 +251,26 @@ def generar_reporte_egresos(df):
 
     st.markdown("---")
 
-    # 2. Resumen por tipo y facturación
     col_resumen1, col_resumen2 = st.columns(2)
     with col_resumen1:
         st.subheader("Clasificación por Tipo")
-        df_tipo = df_pendientes.groupby('Tipo_Egreso')['Importe'].sum().reset_index()
+        df_tipo = df_pendientes_hoy.groupby('Tipo_Egreso')['Importe'].sum().reset_index()
         st.dataframe(df_tipo.style.format({'Importe': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
     with col_resumen2:
         st.subheader("Clasificación por Facturación")
-        df_fact = df_pendientes.groupby('Facturado')['Importe'].sum().reset_index()
+        df_fact = df_pendientes_hoy.groupby('Facturado')['Importe'].sum().reset_index()
         st.dataframe(df_fact.style.format({'Importe': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
-    # 3. Listado Detallado (Ordenado por vencimiento)
-    st.subheader("Detalle de Pagos Pendientes")
-    df_detalle = df.sort_values(by='Fecha_Vencimiento', ascending=True)
+    st.subheader("Detalle de Pagos Pendientes (Vencimiento Ascendente)")
+    df_detalle = df.sort_values(by=['Vencido', 'Fecha_Vencimiento'], ascending=[False, True])
     df_detalle_display = df_detalle.copy()
 
-    # Formateo para la vista
     df_detalle_display['Importe'] = df_detalle_display['Importe'].apply(lambda x: f"${x:,.2f}")
     df_detalle_display['Vencimiento'] = df_detalle_display['Fecha_Vencimiento'].apply(lambda x: x.strftime('%d-%m-%Y'))
-    df_detalle_display['Registro'] = df_detalle_display['Fecha_Registro'].apply(lambda x: x.strftime('%d-%m-%Y'))
     
-    # Columna visual para vencido
     df_detalle_display['Estado'] = df_detalle_display['Vencido'].apply(lambda x: '❌ VENCIDO' if x else '✅ PENDIENTE')
 
     st.dataframe(
@@ -269,6 +296,10 @@ st.set_page_config(page_title="GestionSol - Finanzas", layout="wide")
 
 st.title("GestionSol: Finanzas Diarias 📊")
 
+# Inicializar o cargar la lista de tipos de egreso
+if 'egreso_types' not in st.session_state:
+    st.session_state.egreso_types = load_egreso_types()
+
 tab_ventas, tab_egresos = st.tabs(["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"])
 
 # -------------------------
@@ -284,7 +315,7 @@ with tab_ventas:
         fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
         importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="v_importe_input")
 
-        medio_options = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
+        medio_options = MAPEO_MEDIO_COBRO
         medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x], key="v_medio_input")
 
         col_fac, col_soc = st.columns(2)
@@ -294,7 +325,7 @@ with tab_ventas:
             factura_to_save = 'f' if factura_input == 'f' else '' 
 
         with col_soc:
-            socio_options = {'f': 'Fernando', 'n': 'Nacho'}
+            socio_options = MAPEO_SOCIO
             socio_input = st.radio("👤 Socio", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
         
         submitted = st.form_submit_button("✅ Registrar Venta")
@@ -319,13 +350,38 @@ with tab_ventas:
 
 with tab_egresos:
     st.header("Registro y Control de Gastos/Compras")
-
-    with st.form("registro_egreso_form", clear_on_submit=True):
-        st.subheader("1. Registrar Egreso")
+    
+    # NUEVA SECCIÓN: ADMINISTRACIÓN DE TIPOS
+    with st.container(border=True):
+        st.subheader("🛠️ Administrar Tipos de Egreso")
+        st.caption("Añade nuevas categorías para que aparezcan en el desplegable de abajo.")
         
-        # Tipo de egreso
-        tipo_options = {'m': 'Compra de Mercadería', 's': 'Gasto/Servicio (Luz, Gas, etc.)'}
-        tipo_input = st.selectbox("📝 Tipo de Egreso", list(tipo_options.keys()), format_func=lambda x: tipo_options[x], key="e_tipo_input")
+        with st.form("add_type_form", clear_on_submit=True):
+            new_type_name = st.text_input("Añadir nuevo Tipo de Egreso:", help="Ej: Mantenimiento de Vehículos", key="new_type_name")
+            col_btn, _ = st.columns([1, 4])
+            with col_btn:
+                submitted_type = st.form_submit_button("➕ Añadir Tipo")
+            
+            if submitted_type and new_type_name:
+                new_type_name = new_type_name.strip()
+                if new_type_name and new_type_name not in st.session_state.egreso_types:
+                    st.session_state.egreso_types.append(new_type_name)
+                    # Forzar el guardado en el archivo de configuración
+                    save_egreso_types(st.session_state.egreso_types) 
+                    st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
+                    st.success(f"Tipo '{new_type_name}' añadido y guardado.")
+                elif new_type_name in st.session_state.egreso_types:
+                    st.warning(f"El tipo '{new_type_name}' ya existe.")
+                else:
+                    st.error("Debe ingresar un nombre para el nuevo tipo de egreso.")
+
+
+    # Formulario de Registro de Egreso
+    with st.form("registro_egreso_form", clear_on_submit=True):
+        st.subheader("2. Registrar Egreso")
+        
+        # Tipo de egreso (Ahora usa la lista dinámica)
+        tipo_input = st.selectbox("📝 Tipo de Egreso", st.session_state.egreso_types, key="e_tipo_input")
         
         # Proveedor y Monto
         proveedor_input = st.text_input("🏢 Nombre del Proveedor", key="e_proveedor_input")
