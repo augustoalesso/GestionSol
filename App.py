@@ -344,7 +344,6 @@ if 'proveedores' not in st.session_state:
 if 'proveedor_tipo_map' not in st.session_state:
     st.session_state.proveedor_tipo_map = load_proveedor_tipo_map()
 
-
 # --- BARRA LATERAL (MENÚ PRINCIPAL Y ADMINISTRACIÓN) ---
 with st.sidebar:
     st.header("Menú Principal")
@@ -407,7 +406,6 @@ with st.sidebar:
                 key="map_provider_select"
             )
             
-            # 1. Obtener valores por defecto VÁLIDOS (para evitar el StreamlitAPIException)
             default_types_raw = st.session_state.proveedor_tipo_map.get(provider_to_map, [])
             valid_default_types = [t for t in default_types_raw if t in st.session_state.egreso_types]
 
@@ -426,7 +424,7 @@ with st.sidebar:
                 elif provider_to_map in st.session_state.proveedor_tipo_map:
                     del st.session_state.proveedor_tipo_map[provider_to_map]
                     save_proveedor_tipo_map(st.session_state.proveedor_tipo_map)
-                    st.success(f"Asociación eliminada para '{proveedor_to_map}'.")
+                    st.success(f"Asociación eliminada para '{provider_to_map}'.")
                 else:
                     st.info("No se seleccionó ningún tipo para guardar.")
                 st.experimental_rerun()
@@ -484,48 +482,42 @@ if menu_selection == "💰 Ventas (Ingresos)":
 elif menu_selection == "💸 Egresos (Gastos)":
     st.header("Registro y Control de Gastos/Compras")
     
-    # Lógica de Inicialización para el filtrado (se ejecuta en cada renderizado)
-    current_provider = st.session_state.get('e_proveedor_input', st.session_state.proveedores[0] if st.session_state.proveedores else None)
+    # 1. Lógica de Inicialización para el filtrado (se ejecuta en cada renderizado)
+    # --------------------------------------------------------------------------
     
-    def filter_egreso_types():
-        # Esta función solo establece el estado de la lista filtrada
-        selected_provider = st.session_state.e_proveedor_input
-        if selected_provider in st.session_state.proveedor_tipo_map:
-            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[selected_provider]
-        else:
-            st.session_state.filtered_egreso_types = st.session_state.egreso_types
-        
-        # Resetear el tipo seleccionado para evitar errores si el valor anterior desaparece
-        if 'e_tipo_input' in st.session_state:
-            st.session_state.e_tipo_input = (st.session_state.filtered_egreso_types[0] 
-                                             if st.session_state.filtered_egreso_types else None)
-        
-    # Inicializar la lista filtrada al cargar la página o al cambiar la vista
-    if 'filtered_egreso_types' not in st.session_state:
+    # Obtener el valor actual del selectbox de proveedor (si existe)
+    current_provider_selected = st.session_state.get('e_proveedor_input', None)
+
+    # Si no se ha seleccionado nada, usar el primer proveedor por defecto
+    if current_provider_selected is None and st.session_state.proveedores:
+        current_provider_selected = st.session_state.proveedores[0]
+
+    # Aplicar el filtro basado en el proveedor *actual* seleccionado (o por defecto)
+    if current_provider_selected and current_provider_selected in st.session_state.proveedor_tipo_map:
+        st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[current_provider_selected]
+    else:
         st.session_state.filtered_egreso_types = st.session_state.egreso_types
-        
-    # Ejecutar el filtrado basado en el proveedor preseleccionado si el menú cambió.
-    # Necesitamos asegurar que el filtro se ejecute antes de dibujar los widgets.
+
+    # --------------------------------------------------------------------------
     
-    # Aquí simulamos el on_change antes de dibujar el formulario principal
-    # Usaremos el valor actual del selectbox para aplicar el filtro al renderizar la página.
-    if current_provider:
-        if current_provider in st.session_state.proveedor_tipo_map:
-            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[current_provider]
-        else:
-            st.session_state.filtered_egreso_types = st.session_state.egreso_types
-            
+    # Función para forzar el filtro y re-renderizar (usada al final del formulario)
+    def update_and_rerun():
+        # Esta función se llama después de que el usuario interactúa con el proveedor.
+        # No se llama desde on_change, sino desde el st.form_submit_button.
+        # En este caso, simplemente necesitamos la lógica de re-renderizado para forzar
+        # que el filtro se aplique en el siguiente ciclo.
+        st.experimental_rerun()
 
     # Formulario de Registro de Egreso
     with st.form("registro_egreso_form", clear_on_submit=True):
         st.subheader("1. Registrar Egreso")
         
-        # Proveedor (Lista dinámica) - El on_change es ahora seguro porque resetea el otro widget
+        # Proveedor (Lista dinámica) - SIN on_change para evitar el error!
         proveedor_input = st.selectbox(
             "🏢 Nombre del Proveedor", 
             st.session_state.proveedores, 
             key="e_proveedor_input",
-            on_change=filter_egreso_types # <-- Vuelve on_change, pero la función filter_egreso_types es segura
+            # ELIMINAMOS on_change=filter_egreso_types
         )
         
         # Tipo de egreso (Lista dinámica FILTRADA)
