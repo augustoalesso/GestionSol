@@ -6,77 +6,58 @@ import re
 from datetime import datetime
 
 # ==========================================================
-# --- CONFIGURACIÓN Y MAPPING DE DATOS ---
+# --- CONFIGURACIÓN Y CONSTANTES ---
 # ==========================================================
 
-HISTORICO_FILE = 'ventas_historico.csv'
+VENTAS_FILE = 'ventas_historico.csv'
+EGRESOS_FILE = 'egresos_historico.csv'
 
-# Mapeo de abreviaturas a nombres completos para los reportes
-MAPEO_MEDIO_COBRO = {
-    'e': 'Efectivo',
-    't': 'Transferencia',
-    'd': 'Débito',
-    'c': 'Crédito'
-}
+# Mapeo de abreviaturas para Ventas
+MAPEO_MEDIO_COBRO = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
+MAPEO_SOCIO = {'f': 'Fernando', 'n': 'Ignacio (Nacho)'}
+COLUMNAS_VENTAS_FINALES = ['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio']
 
-MAPEO_SOCIO = {
-    'f': 'Fernando',
-    'n': 'Ignacio (Nacho)'
-}
+# Mapeo de tipos para Egresos
+MAPEO_TIPO_EGRESO = {'m': 'Mercadería', 's': 'Servicio/Gasto'}
+COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Importe', 'Fecha_Vencimiento', 'Facturado']
 
-# Columnas esperadas en el archivo de entrada
-COLUMNAS_INPUT_FORM = ['Importe de venta', 'Medio de cobro', 'Factura?', 'Socio']
 
 # ==========================================================
-# --- FUNCIONES DE PERSISTENCIA (CSV) ---
+# --- FUNCIONES DE PERSISTENCIA: VENTAS ---
 # ==========================================================
 
-def load_data():
-    """Carga el DataFrame histórico o crea uno vacío si no existe, manejando codificación y separadores."""
+def load_ventas_data():
+    """Carga el DataFrame histórico de ventas o crea uno vacío."""
     try:
         df = None
-        
-        # 1. Intentar con codificación LATIN-1 (común en Excel/Windows) y separador coma
-        try:
-            df = pd.read_csv(HISTORICO_FILE, encoding='latin-1', sep=',')
-        except Exception:
-            # 2. Intentar con codificación UTF-8 y separador punto y coma
+        # Intenta tres combinaciones de codificación/separador para robustez
+        for encoding, sep in [('latin-1', ','), ('utf-8', ';'), ('utf-8', ',')]:
             try:
-                df = pd.read_csv(HISTORICO_FILE, encoding='utf-8', sep=';')
+                df = pd.read_csv(VENTAS_FILE, encoding=encoding, sep=sep)
+                break
             except Exception:
-                # 3. Intentar codificación UTF-8 y separador coma (el estándar)
-                df = pd.read_csv(HISTORICO_FILE, encoding='utf-8', sep=',')
-
-        # Si se logra cargar, limpia el DataFrame
+                continue
+                
         if df is not None:
-            # Asegurarse de que 'Fecha' sea un objeto datetime.date
-            df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
-            # Limpiar filas completamente vacías
-            df = df.dropna(how='all')
+            df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce').dt.date
+            df = df.dropna(subset=['Importe de venta']).dropna(how='all')
             return df
-
-    except FileNotFoundError:
-        st.error("Error: Archivo de historial no encontrado. Asegúrese de que existe 'ventas_historico.csv'.")
     except Exception as e:
-        st.error(f"Error al cargar el historial CSV: {e}")
+        st.sidebar.error(f"Error al cargar historial de VENTAS: {e}")
 
-    # Si la carga falla por cualquier motivo, retorna un DataFrame vacío con las columnas finales esperadas
-    return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
+    return pd.DataFrame(columns=COLUMNAS_VENTAS_FINALES)
 
-
-def save_data(df):
-    """Guarda el DataFrame en el archivo histórico usando el estándar UTF-8 y coma como separador."""
+def save_ventas_data(df):
+    """Guarda el DataFrame de ventas en el archivo histórico."""
     try:
-        # Se guarda siempre en formato estándar (coma, UTF-8)
-        df.to_csv(HISTORICO_FILE, index=False, sep=',')
+        df.to_csv(VENTAS_FILE, index=False, sep=',')
     except Exception as e:
-        st.error(f"Error al guardar los datos: {e}")
+        st.error(f"Error al guardar los datos de ventas: {e}")
 
 def add_new_sale(fecha, importe, medio, factura, socio):
     """Agrega la nueva venta al historial y lo guarda."""
-    df_historico = load_data()
+    df_historico = load_ventas_data()
     
-    # Crear la fila de datos con las transformaciones
     facturado_str = 'Facturado' if factura == 'f' else 'No Facturado'
     medio_str = MAPEO_MEDIO_COBRO.get(medio, 'Desconocido')
     socio_str = MAPEO_SOCIO.get(socio, 'Desconocido')
@@ -89,41 +70,99 @@ def add_new_sale(fecha, importe, medio, factura, socio):
         'Socio': socio_str
     }
     
-    # Añadir al DataFrame
     new_row_df = pd.DataFrame([new_data])
     df_actualizado = pd.concat([df_historico, new_row_df], ignore_index=True)
 
-    # Limpiar y asegurar tipos de dato
     df_actualizado['Importe de venta'] = pd.to_numeric(df_actualizado['Importe de venta'], errors='coerce')
     df_final = df_actualizado.dropna(subset=['Importe de venta'])
     
-    # Guardar los datos actualizados
-    save_data(df_final)
+    save_ventas_data(df_final)
     return df_final
 
 
 # ==========================================================
-# --- FUNCIÓN DE REPORTE (PRINCIPAL) ---
+# --- FUNCIONES DE PERSISTENCIA: EGRESOS (NUEVAS) ---
 # ==========================================================
 
-def generar_resumen_reporte(df, titulo_adicional=""):
-    """Genera los DataFrames de resumen y el archivo de descarga."""
+def load_egresos_data():
+    """Carga el DataFrame histórico de egresos o crea uno vacío."""
+    try:
+        df = None
+        # Intenta tres combinaciones de codificación/separador para robustez
+        for encoding, sep in [('latin-1', ','), ('utf-8', ';'), ('utf-8', ',')]:
+            try:
+                df = pd.read_csv(EGRESOS_FILE, encoding=encoding, sep=sep)
+                break
+            except Exception:
+                continue
+                
+        if df is not None:
+            df['Fecha_Vencimiento'] = pd.to_datetime(df['Fecha_Vencimiento'], errors='coerce').dt.date
+            df['Fecha_Registro'] = pd.to_datetime(df['Fecha_Registro'], errors='coerce').dt.date
+            df = df.dropna(subset=['Importe']).dropna(how='all')
+            return df
+    except Exception as e:
+        st.sidebar.error(f"Error al cargar historial de EGRESOS: {e}")
+
+    return pd.DataFrame(columns=COLUMNAS_EGRESOS_FINALES)
+
+
+def save_egresos_data(df):
+    """Guarda el DataFrame de egresos en el archivo histórico."""
+    try:
+        df.to_csv(EGRESOS_FILE, index=False, sep=',')
+    except Exception as e:
+        st.error(f"Error al guardar los datos de egresos: {e}")
+
+def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
+    """Agrega el nuevo egreso al historial y lo guarda."""
+    df_historico = load_egresos_data()
     
+    facturado_str = 'Facturado' if factura == 'f' else 'No Facturado'
+    tipo_str = MAPEO_TIPO_EGRESO.get(tipo, 'Otro')
+
+    new_data = {
+        'Fecha_Registro': datetime.now().date(),
+        'Tipo_Egreso': tipo_str,
+        'Proveedor': proveedor,
+        'Importe': importe,
+        'Fecha_Vencimiento': vencimiento,
+        'Facturado': facturado_str
+    }
+    
+    new_row_df = pd.DataFrame([new_data])
+    df_actualizado = pd.concat([df_historico, new_row_df], ignore_index=True)
+
+    df_actualizado['Importe'] = pd.to_numeric(df_actualizado['Importe'], errors='coerce')
+    df_final = df_actualizado.dropna(subset=['Importe'])
+    
+    save_egresos_data(df_final)
+    return df_final
+
+
+# ==========================================================
+# --- FUNCIONES DE REPORTE ---
+# ==========================================================
+
+def generar_resumen_ventas(df):
+    """Genera y muestra el reporte de ventas."""
+    if df.empty:
+        st.info("Aún no hay ventas registradas. Use el formulario para añadir la primera venta.")
+        return
+
+    st.subheader(f"📊 Reporte Acumulado de Ventas")
+    st.markdown("---")
+
     total_ventas = df['Importe de venta'].sum()
     total_facturado = df[df['Facturado'] == 'Facturado']['Importe de venta'].sum()
     
-    st.subheader(f"📊 Reporte Acumulado de Ventas {titulo_adicional}")
-    st.markdown("---")
-
     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-    
     col_kpi1.metric("💰 Venta Total Acumulada", f"${total_ventas:,.2f}")
     col_kpi2.metric("✅ Monto Facturado", f"${total_facturado:,.2f}")
     col_kpi3.metric("🧾 Total de Registros", df.shape[0])
 
     st.markdown("---")
 
-    # 2. Discriminación por Socio y Facturación
     col_resumen1, col_resumen2 = st.columns(2)
 
     # Resumen por Socio
@@ -140,101 +179,180 @@ def generar_resumen_reporte(df, titulo_adicional=""):
         st.subheader("🧾 Resumen por Facturación")
         st.dataframe(df_fact.style.format({'Venta Total': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
-    # 3. Discriminación por Medio de Cobro
     st.subheader("💳 Resumen por Medio de Cobro")
     df_cobro = df.groupby('Medio de cobro')['Importe de venta'].sum().reset_index()
     df_cobro.columns = ['Medio de Cobro', 'Monto Cobrado']
     st.dataframe(df_cobro.style.format({'Monto Cobrado': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
     st.markdown("---")
-
-    # 4. Generación y Descarga del Archivo CSV Consolidado
-    
     csv_output = df.to_csv(index=False).encode('utf-8')
-        
     st.download_button(
-        label="⬇️ Descargar Historial Completo en CSV",
+        label="⬇️ Descargar Historial de Ventas en CSV",
         data=csv_output,
         file_name=f"Historial_Ventas_Acumulado_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
-        key="descarga_csv_historico"
+        key="descarga_csv_historico_ventas"
     )
-    st.success("Historial guardado y disponible para descarga.")
     st.dataframe(df.tail(10), use_container_width=True, caption="Últimas 10 filas registradas")
 
+
+def generar_reporte_egresos(df):
+    """Genera y muestra el reporte de egresos (To-Do List)."""
+    if df.empty:
+        st.info("Aún no hay egresos registrados.")
+        return
+
+    st.subheader("📅 Pendientes de Pago (Egresos)")
+    st.markdown("---")
+    
+    # 1. Filtro y KPIs
+    df['Vencido'] = df['Fecha_Vencimiento'] < datetime.now().date()
+    df_pendientes = df[~df['Vencido']] # Muestra todo lo que no está vencido
+    
+    total_importe = df_pendientes['Importe'].sum()
+    total_vencido = df[df['Vencido']]['Importe'].sum()
+
+    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+    col_kpi1.metric("💸 Total Pendiente", f"${total_importe:,.2f}")
+    col_kpi2.metric("❌ Vencido (Histórico)", f"${total_vencido:,.2f}")
+    col_kpi3.metric("📝 Egresos Registrados", df.shape[0])
+
+    st.markdown("---")
+
+    # 2. Resumen por tipo y facturación
+    col_resumen1, col_resumen2 = st.columns(2)
+    with col_resumen1:
+        st.subheader("Clasificación por Tipo")
+        df_tipo = df_pendientes.groupby('Tipo_Egreso')['Importe'].sum().reset_index()
+        st.dataframe(df_tipo.style.format({'Importe': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+    with col_resumen2:
+        st.subheader("Clasificación por Facturación")
+        df_fact = df_pendientes.groupby('Facturado')['Importe'].sum().reset_index()
+        st.dataframe(df_fact.style.format({'Importe': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # 3. Listado Detallado (Ordenado por vencimiento)
+    st.subheader("Detalle de Pagos Pendientes")
+    df_detalle = df.sort_values(by='Fecha_Vencimiento', ascending=True)
+    df_detalle_display = df_detalle.copy()
+
+    # Formateo para la vista
+    df_detalle_display['Importe'] = df_detalle_display['Importe'].apply(lambda x: f"${x:,.2f}")
+    df_detalle_display['Vencimiento'] = df_detalle_display['Fecha_Vencimiento'].apply(lambda x: x.strftime('%d-%m-%Y'))
+    df_detalle_display['Registro'] = df_detalle_display['Fecha_Registro'].apply(lambda x: x.strftime('%d-%m-%Y'))
+    
+    # Columna visual para vencido
+    df_detalle_display['Estado'] = df_detalle_display['Vencido'].apply(lambda x: '❌ VENCIDO' if x else '✅ PENDIENTE')
+
+    st.dataframe(
+        df_detalle_display[['Estado', 'Vencimiento', 'Proveedor', 'Tipo_Egreso', 'Importe', 'Facturado']],
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    csv_output = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="⬇️ Descargar Historial de Egresos en CSV",
+        data=csv_output,
+        file_name=f"Historial_Egresos_Acumulado_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        key="descarga_csv_historico_egresos"
+    )
 
 # ==========================================================
 # --- ESTRUCTURA PRINCIPAL DE LA APLICACIÓN STREAMLIT ---
 # ==========================================================
 
-st.set_page_config(page_title="GestionSol - Reporte Diario", layout="wide")
+st.set_page_config(page_title="GestionSol - Finanzas", layout="wide")
 
-st.title("GestionSol: Registro y Reporte de Ventas 📈")
-st.markdown("Registre cada venta para mantener un historial acumulado y generar reportes instantáneos.")
-st.markdown("---")
+st.title("GestionSol: Finanzas Diarias 📊")
 
+tab_ventas, tab_egresos = st.tabs(["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"])
 
-# Formulario de Registro
-with st.form("registro_venta_form", clear_on_submit=True):
-    st.subheader("1. Registrar Nueva Venta")
-    
-    fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
-    
-    # Campo para el importe
-    importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="importe_input")
+# -------------------------
+# --- PESTAÑA DE VENTAS ---
+# -------------------------
 
-    # Selección de medio de cobro
-    medio_options = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
-    medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x])
+with tab_ventas:
+    st.header("Registro y Reporte de Ventas")
 
-    col_fac, col_soc = st.columns(2)
-    
-    # Selección de facturación
-    with col_fac:
-        factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado (dejar vacío)", index=1, horizontal=True)
-        # Convertir 'no' a vacío para la lógica interna (simulando que la celda queda vacía)
-        factura_to_save = 'f' if factura_input == 'f' else '' 
+    with st.form("registro_venta_form", clear_on_submit=True):
+        st.subheader("1. Registrar Venta (Agregada)")
+        
+        fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
+        importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="v_importe_input")
 
-    # Selección de socio
-    with col_soc:
-        socio_options = {'f': 'Fernando', 'n': 'Nacho'}
-        socio_input = st.radio("👤 Socio", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True)
-    
-    # Botón de envío
-    submitted = st.form_submit_button("✅ Registrar Venta")
+        medio_options = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
+        medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x], key="v_medio_input")
 
-if submitted:
-    if importe_input <= 0:
-        st.error("El importe de la venta debe ser mayor a cero.")
+        col_fac, col_soc = st.columns(2)
+        
+        with col_fac:
+            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="v_factura_input")
+            factura_to_save = 'f' if factura_input == 'f' else '' 
+
+        with col_soc:
+            socio_options = {'f': 'Fernando', 'n': 'Nacho'}
+            socio_input = st.radio("👤 Socio", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
+        
+        submitted = st.form_submit_button("✅ Registrar Venta")
+
+    if submitted:
+        if importe_input <= 0:
+            st.error("El importe de la venta debe ser mayor a cero.")
+        else:
+            with st.spinner("Guardando venta..."):
+                df_historico_actualizado = add_new_sale(
+                    fecha=fecha_input, importe=importe_input, medio=medio_input, factura=factura_to_save, socio=socio_input
+                )
+            st.success(f"Venta de ${importe_input:,.2f} registrada exitosamente.")
+            generar_resumen_ventas(df_historico_actualizado)
+            
     else:
-        # 2. Procesar y Guardar Datos
-        with st.spinner(f"Guardando venta del {fecha_input.strftime('%d-%m-%Y')}..."):
-            df_historico_actualizado = add_new_sale(
-                fecha=fecha_input,
-                importe=importe_input,
-                medio=medio_input,
-                factura=factura_to_save,
-                socio=socio_input
-            )
-        
-        st.success(f"Venta de ${importe_input:,.2f} registrada exitosamente.")
-        
-        # 3. Mostrar Reporte basado en el historial completo
-        generar_resumen_reporte(df_historico_actualizado)
-        
-else:
-    # Si no hay envío, muestra el reporte del historial actual al cargar la página
-    df_historico = load_data()
-    if not df_historico.empty:
-        generar_resumen_reporte(df_historico)
-    else:
-        st.info("Aún no hay ventas registradas. Use el formulario para añadir la primera venta.")
+        generar_resumen_ventas(load_ventas_data())
 
-# --- Instrucciones y Ayuda ---
-with st.expander("📚 Detalles de las Abreviaturas"):
-    st.markdown("""
-    Los mapeos usados para el registro son:
-    * **Medio de cobro**: `e` (Efectivo), `t` (Transferencia), `d` (Débito), `c` (Crédito).
-    * **Factura?**: `f` (Facturado) o "No Facturado".
-    * **Socio**: `f` (Fernando) o `n` (Nacho).
-    """)
+# --------------------------
+# --- PESTAÑA DE EGRESOS ---
+# --------------------------
+
+with tab_egresos:
+    st.header("Registro y Control de Gastos/Compras")
+
+    with st.form("registro_egreso_form", clear_on_submit=True):
+        st.subheader("1. Registrar Egreso")
+        
+        # Tipo de egreso
+        tipo_options = {'m': 'Compra de Mercadería', 's': 'Gasto/Servicio (Luz, Gas, etc.)'}
+        tipo_input = st.selectbox("📝 Tipo de Egreso", list(tipo_options.keys()), format_func=lambda x: tipo_options[x], key="e_tipo_input")
+        
+        # Proveedor y Monto
+        proveedor_input = st.text_input("🏢 Nombre del Proveedor", key="e_proveedor_input")
+        importe_input = st.number_input("💵 Importe a Pagar", min_value=0.0, step=0.01, format="%.2f", key="e_importe_input")
+
+        col_fecha, col_fac = st.columns(2)
+
+        # Fecha de Vencimiento
+        with col_fecha:
+            vencimiento_input = st.date_input("🗓️ Fecha de Vencimiento (o Pago)", datetime.now().date(), key="e_vencimiento_input")
+
+        # Estado de Factura
+        with col_fac:
+            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="e_factura_input")
+            factura_to_save = 'f' if factura_input == 'f' else '' 
+        
+        submitted_egreso = st.form_submit_button("✅ Registrar Egreso")
+
+    if submitted_egreso:
+        if importe_input <= 0 or not proveedor_input:
+            st.error("Debe ingresar un importe válido y el nombre del proveedor.")
+        else:
+            with st.spinner("Guardando egreso..."):
+                df_egresos_actualizado = add_new_egreso(
+                    tipo=tipo_input, proveedor=proveedor_input, importe=importe_input, vencimiento=vencimiento_input, factura=factura_to_save
+                )
+            st.success(f"Egreso a {proveedor_input} por ${importe_input:,.2f} registrado exitosamente.")
+            generar_reporte_egresos(df_egresos_actualizado)
+    else:
+        generar_reporte_egresos(load_egresos_data())
