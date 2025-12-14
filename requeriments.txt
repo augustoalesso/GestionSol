@@ -1,4 +1,2 @@
 streamlit
 pandas
-numpy
-openpyxl==3.1.2
