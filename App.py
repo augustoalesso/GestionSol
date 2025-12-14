@@ -11,15 +11,15 @@ from datetime import datetime
 
 VENTAS_FILE = 'ventas_historico.csv'
 EGRESOS_FILE = 'egresos_historico.csv'
-EGRESO_TYPES_CONFIG_FILE = 'egreso_types_config.txt' # Archivo de tipos
-PROVEEDOR_CONFIG_FILE = 'proveedor_config.txt'      # Nuevo archivo de proveedores
+EGRESO_TYPES_CONFIG_FILE = 'egreso_types_config.txt'
+PROVEEDOR_CONFIG_FILE = 'proveedor_config.txt'
 
 # Mapeo de abreviaturas para Ventas
 MAPEO_MEDIO_COBRO = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
 MAPEO_SOCIO = {'f': 'Fernando', 'n': 'Ignacio (Nacho)'}
 COLUMNAS_VENTAS_FINALES = ['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio']
 
-# Tipos de Egreso predeterminados
+# Tipos de Egreso y Proveedores por defecto
 DEFAULT_EGRESO_TYPES = ['Mercadería', 'Servicio', 'Empleado', 'Otros']
 DEFAULT_PROVEEDORES = ['Proveedor Genérico']
 COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Importe', 'Fecha_Vencimiento', 'Facturado']
@@ -29,62 +29,46 @@ COLUMNAS_EGRESOS_FINALES = ['Fecha_Registro', 'Tipo_Egreso', 'Proveedor', 'Impor
 # --- FUNCIONES DE PERSISTENCIA DE CONFIGURACIÓN ---
 # ==========================================================
 
+def load_config(file_path, default_list):
+    """Carga una lista de configuración desde un archivo de texto."""
+    try:
+        with open(file_path, 'r') as f:
+            items = [line.strip() for line in f if line.strip()]
+        if not items:
+            save_config(file_path, default_list)
+            return default_list
+        return items
+    except FileNotFoundError:
+        save_config(file_path, default_list)
+        return default_list
+    except Exception as e:
+        st.error(f"Error al cargar configuración de {file_path}: {e}")
+        return default_list
+
+def save_config(file_path, items_list):
+    """Guarda una lista de configuración en un archivo de texto."""
+    try:
+        unique_sorted_items = sorted(list(set(items_list)))
+        with open(file_path, 'w') as f:
+            for item_name in unique_sorted_items:
+                f.write(f"{item_name}\n")
+    except Exception as e:
+        st.error(f"Error al guardar configuración de {file_path}: {e}")
+
+# Funciones específicas usando la genérica
 def load_egreso_types():
-    """Carga los tipos de egreso desde el archivo de configuración o usa los predeterminados."""
-    try:
-        with open(EGRESO_TYPES_CONFIG_FILE, 'r') as f:
-            types = [line.strip() for line in f if line.strip()]
-        if not types:
-            return DEFAULT_EGRESO_TYPES
-        return types
-    except FileNotFoundError:
-        save_egreso_types(DEFAULT_EGRESO_TYPES)
-        return DEFAULT_EGRESO_TYPES
-    except Exception as e:
-        st.error(f"Error al cargar tipos de egreso: {e}")
-        return DEFAULT_EGRESO_TYPES
-
+    return load_config(EGRESO_TYPES_CONFIG_FILE, DEFAULT_EGRESO_TYPES)
 def save_egreso_types(types_list):
-    """Guarda la lista actual de tipos de egreso en el archivo de configuración."""
-    try:
-        unique_sorted_types = sorted(list(set(types_list)))
-        with open(EGRESO_TYPES_CONFIG_FILE, 'w') as f:
-            for type_name in unique_sorted_types:
-                f.write(f"{type_name}\n")
-    except Exception as e:
-        st.error(f"Error al guardar tipos de egreso: {e}")
+    save_config(EGRESO_TYPES_CONFIG_FILE, types_list)
 
-# --- Nuevas Funciones para Proveedores ---
 def load_proveedores():
-    """Carga la lista de proveedores desde el archivo de configuración o usa los predeterminados."""
-    try:
-        with open(PROVEEDOR_CONFIG_FILE, 'r') as f:
-            # Lee líneas no vacías y elimina el espacio en blanco
-            proveedores = [line.strip() for line in f if line.strip()]
-        if not proveedores:
-            return DEFAULT_PROVEEDORES
-        return proveedores
-    except FileNotFoundError:
-        save_proveedores(DEFAULT_PROVEEDORES)
-        return DEFAULT_PROVEEDORES
-    except Exception as e:
-        st.error(f"Error al cargar proveedores: {e}")
-        return DEFAULT_PROVEEDORES
-
+    return load_config(PROVEEDOR_CONFIG_FILE, DEFAULT_PROVEEDORES)
 def save_proveedores(proveedores_list):
-    """Guarda la lista actual de proveedores en el archivo de configuración."""
-    try:
-        # Usa set() para eliminar duplicados y sorted() para ordenarlos
-        unique_sorted_proveedores = sorted(list(set(proveedores_list)))
-        with open(PROVEEDOR_CONFIG_FILE, 'w') as f:
-            for proveedor_name in unique_sorted_proveedores:
-                f.write(f"{proveedor_name}\n")
-    except Exception as e:
-        st.error(f"Error al guardar proveedores: {e}")
+    save_config(PROVEEDOR_CONFIG_FILE, proveedores_list)
 
 
 # ==========================================================
-# --- FUNCIONES DE PERSISTENCIA: VENTAS ---
+# --- FUNCIONES DE PERSISTENCIA: VENTAS/EGRESOS ---
 # (Se mantienen iguales)
 # ==========================================================
 
@@ -105,7 +89,6 @@ def load_ventas_data():
             return df
     except Exception as e:
         st.sidebar.error(f"Error al cargar historial de VENTAS: {e}")
-
     return pd.DataFrame(columns=COLUMNAS_VENTAS_FINALES)
 
 def save_ventas_data(df):
@@ -140,12 +123,6 @@ def add_new_sale(fecha, importe, medio, factura, socio):
     save_ventas_data(df_final)
     return df_final
 
-
-# ==========================================================
-# --- FUNCIONES DE PERSISTENCIA: EGRESOS ---
-# (Se mantienen iguales)
-# ==========================================================
-
 def load_egresos_data():
     """Carga el DataFrame histórico de egresos o crea uno vacío."""
     try:
@@ -166,7 +143,6 @@ def load_egresos_data():
         st.sidebar.error(f"Error al cargar historial de EGRESOS: {e}")
 
     return pd.DataFrame(columns=COLUMNAS_EGRESOS_FINALES)
-
 
 def save_egresos_data(df):
     """Guarda el DataFrame de egresos en el archivo histórico."""
@@ -202,9 +178,49 @@ def add_new_egreso(tipo, proveedor, importe, vencimiento, factura):
 
 
 # ==========================================================
-# --- FUNCIONES DE REPORTE ---
-# (Se mantienen iguales)
+# --- FUNCIONES DE INTERFAZ Y REPORTE ---
 # ==========================================================
+
+# Función para el formulario de administración de tipos de egreso
+def form_admin_tipos():
+    st.subheader("Tipos de Egreso")
+    with st.form("add_type_form", clear_on_submit=True):
+        new_type_name = st.text_input("Añadir nuevo Tipo:", help="Ej: Mantenimiento de Vehículos", key="new_type_name")
+        submitted_type = st.form_submit_button("➕ Añadir Tipo")
+        
+        if submitted_type and new_type_name:
+            new_type_name = new_type_name.strip()
+            if new_type_name and new_type_name not in st.session_state.egreso_types:
+                st.session_state.egreso_types.append(new_type_name)
+                save_egreso_types(st.session_state.egreso_types) 
+                st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
+                st.success(f"Tipo '{new_type_name}' añadido y guardado.")
+            elif new_type_name in st.session_state.egreso_types:
+                st.warning(f"El tipo '{new_type_name}' ya existe.")
+            else:
+                st.error("Debe ingresar un nombre para el nuevo tipo de egreso.")
+    st.caption(f"Tipos Actuales: {', '.join(st.session_state.egreso_types)}")
+
+# Función para el formulario de administración de proveedores
+def form_admin_proveedores():
+    st.subheader("Proveedores")
+    with st.form("add_provider_form", clear_on_submit=True):
+        new_provider_name = st.text_input("Añadir nuevo Proveedor:", help="Ej: EPEC (Luz)", key="new_provider_name")
+        submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
+        
+        if submitted_provider and new_provider_name:
+            new_provider_name = new_provider_name.strip()
+            if new_provider_name and new_provider_name not in st.session_state.proveedores:
+                st.session_state.proveedores.append(new_provider_name)
+                save_proveedores(st.session_state.proveedores)
+                st.session_state.proveedores = load_proveedores() # Recargar la lista ordenada
+                st.success(f"Proveedor '{new_provider_name}' añadido y guardado.")
+            elif new_provider_name in st.session_state.proveedores:
+                st.warning(f"El proveedor '{new_provider_name}' ya existe.")
+            else:
+                st.error("Debe ingresar un nombre para el nuevo proveedor.")
+    st.caption(f"Proveedores Actuales: {', '.join(st.session_state.proveedores)}")
+
 
 def generar_resumen_ventas(df):
     """Genera y muestra el reporte de ventas."""
@@ -214,6 +230,8 @@ def generar_resumen_ventas(df):
 
     st.subheader(f"📊 Reporte Acumulado de Ventas")
     st.markdown("---")
+    
+    # ... (El resto del reporte de ventas se mantiene igual)
 
     total_ventas = df['Importe de venta'].sum()
     total_facturado = df[df['Facturado'] == 'Facturado']['Importe de venta'].sum()
@@ -267,6 +285,8 @@ def generar_reporte_egresos(df):
     st.subheader("📅 Pendientes de Pago (Egresos)")
     st.markdown("---")
     
+    # ... (El resto del reporte de egresos se mantiene igual)
+
     df['Vencido'] = df['Fecha_Vencimiento'] < datetime.now().date()
     df_pendientes_hoy = df[~df['Vencido']] 
     
@@ -332,33 +352,66 @@ if 'egreso_types' not in st.session_state:
 if 'proveedores' not in st.session_state:
     st.session_state.proveedores = load_proveedores()
 
+# Usamos session_state para mantener el estado de la pestaña activa (para el sidebar)
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = "Ventas" 
+
+# --- Definición de Pestañas ---
 tab_ventas, tab_egresos = st.tabs(["💰 Ventas (Ingresos)", "💸 Egresos (Gastos)"])
+
+# Código para actualizar la pestaña activa al hacer clic
+# (Esto se hace con callbacks o guardando el estado al cambiar, pero la forma más simple es usar un botón o el contenedor del tab)
+
+# -----------------------------------
+# --- BARRA LATERAL (ADMINISTRACIÓN) ---
+# -----------------------------------
+
+with st.sidebar:
+    st.header("⚙️ Gestión Rápida")
+    
+    # Condición: Mostrar administración solo si la pestaña de Egresos está activa
+    # Nota: Streamlit no tiene un hook fácil para saber qué pestaña está ACTIVA. 
+    # Usaremos una variable de sesión o un control simple para simular esto.
+
+    # Simulación de control de estado: si el usuario hace clic en el botón de Egresos, mostramos la administración.
+    
+    if st.session_state.get('active_tab_sidebar') == 'Egresos':
+        st.subheader("Administración (Egresos)")
+        st.markdown("---")
+        form_admin_tipos()
+        st.markdown("---")
+        form_admin_proveedores()
+        st.markdown("---")
+
 
 # -------------------------
 # --- PESTAÑA DE VENTAS ---
 # -------------------------
 
 with tab_ventas:
+    st.session_state.active_tab_sidebar = "Ventas" # Actualizar estado al entrar a la pestaña
     st.header("Registro y Reporte de Ventas")
 
     with st.form("registro_venta_form", clear_on_submit=True):
         st.subheader("1. Registrar Venta (Agregada)")
         
+        # CAMBIO 1: Socio primero
+        col_soc_first, col_fac_first = st.columns(2)
+        with col_soc_first:
+            socio_options = MAPEO_SOCIO
+            # SELECCIÓN DEL SOCIO ES LO PRIMERO
+            socio_input = st.radio("👤 Socio Responsable", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
+        with col_fac_first:
+            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="v_factura_input")
+            factura_to_save = 'f' if factura_input == 'f' else '' 
+        
+        st.markdown("---") # Separador visual
+
         fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
         importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="v_importe_input")
 
         medio_options = MAPEO_MEDIO_COBRO
         medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x], key="v_medio_input")
-
-        col_fac, col_soc = st.columns(2)
-        
-        with col_fac:
-            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="v_factura_input")
-            factura_to_save = 'f' if factura_input == 'f' else '' 
-
-        with col_soc:
-            socio_options = MAPEO_SOCIO
-            socio_input = st.radio("👤 Socio", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
         
         submitted = st.form_submit_button("✅ Registrar Venta")
 
@@ -381,58 +434,14 @@ with tab_ventas:
 # --------------------------
 
 with tab_egresos:
+    st.session_state.active_tab_sidebar = "Egresos" # Actualizar estado al entrar a la pestaña
     st.header("Registro y Control de Gastos/Compras")
-    
-    # SECCIÓN DE ADMINISTRACIÓN
-    with st.expander("🛠️ Administrar Tipos de Egreso y Proveedores"):
-        col_types, col_providers = st.columns(2)
-        
-        # 1. Administrar Tipos de Egreso
-        with col_types:
-            st.subheader("Tipos de Egreso")
-            with st.form("add_type_form", clear_on_submit=True):
-                new_type_name = st.text_input("Añadir nuevo Tipo de Egreso:", help="Ej: Mantenimiento de Vehículos", key="new_type_name")
-                submitted_type = st.form_submit_button("➕ Añadir Tipo")
-                
-                if submitted_type and new_type_name:
-                    new_type_name = new_type_name.strip()
-                    if new_type_name and new_type_name not in st.session_state.egreso_types:
-                        st.session_state.egreso_types.append(new_type_name)
-                        save_egreso_types(st.session_state.egreso_types) 
-                        st.session_state.egreso_types = load_egreso_types() # Recargar la lista ordenada
-                        st.success(f"Tipo '{new_type_name}' añadido y guardado.")
-                    elif new_type_name in st.session_state.egreso_types:
-                        st.warning(f"El tipo '{new_type_name}' ya existe.")
-                    else:
-                        st.error("Debe ingresar un nombre para el nuevo tipo de egreso.")
-            st.markdown(f"**Tipos Actuales:** {', '.join(st.session_state.egreso_types)}")
-
-        # 2. Administrar Proveedores (NUEVO)
-        with col_providers:
-            st.subheader("Proveedores")
-            with st.form("add_provider_form", clear_on_submit=True):
-                new_provider_name = st.text_input("Añadir nuevo Proveedor:", help="Ej: EPEC", key="new_provider_name")
-                submitted_provider = st.form_submit_button("➕ Añadir Proveedor")
-                
-                if submitted_provider and new_provider_name:
-                    new_provider_name = new_provider_name.strip()
-                    if new_provider_name and new_provider_name not in st.session_state.proveedores:
-                        st.session_state.proveedores.append(new_provider_name)
-                        save_proveedores(st.session_state.proveedores)
-                        st.session_state.proveedores = load_proveedores() # Recargar la lista ordenada
-                        st.success(f"Proveedor '{new_provider_name}' añadido y guardado.")
-                    elif new_provider_name in st.session_state.proveedores:
-                        st.warning(f"El proveedor '{new_provider_name}' ya existe.")
-                    else:
-                        st.error("Debe ingresar un nombre para el nuevo proveedor.")
-            st.markdown(f"**Proveedores Actuales:** {', '.join(st.session_state.proveedores)}")
-
 
     # Formulario de Registro de Egreso
     with st.form("registro_egreso_form", clear_on_submit=True):
-        st.subheader("2. Registrar Egreso")
+        st.subheader("1. Registrar Egreso")
         
-        # Proveedor (Ahora es un desplegable dinámico)
+        # Proveedor (Lista dinámica)
         proveedor_input = st.selectbox("🏢 Nombre del Proveedor", st.session_state.proveedores, key="e_proveedor_input")
         
         # Tipo de egreso (Lista dinámica)
