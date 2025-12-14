@@ -437,3 +437,132 @@ with st.sidebar:
                 st.caption(f"**{p}**: {', '.join(types)}")
         else:
             st.caption("Ninguna asociación creada.")
+        
+        st.markdown("---")
+
+
+# --- CONTENIDO PRINCIPAL ---
+
+if menu_selection == "💰 Ventas (Ingresos)":
+    st.header("Registro y Reporte de Ventas")
+
+    with st.form("registro_venta_form", clear_on_submit=True):
+        st.subheader("1. Registrar Venta (Agregada)")
+        
+        col_soc_first, col_fac_first = st.columns(2)
+        with col_soc_first:
+            socio_options = MAPEO_SOCIO
+            socio_input = st.radio("👤 Socio Responsable", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True, key="v_socio_input")
+        with col_fac_first:
+            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="v_factura_input")
+            factura_to_save = 'f' if factura_input == 'f' else '' 
+        
+        st.markdown("---")
+
+        fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
+        importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="v_importe_input")
+
+        medio_options = MAPEO_MEDIO_COBRO
+        medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x], key="v_medio_input")
+        
+        submitted = st.form_submit_button("✅ Registrar Venta")
+
+    if submitted:
+        if importe_input <= 0:
+            st.error("El importe de la venta debe ser mayor a cero.")
+        else:
+            with st.spinner("Guardando venta..."):
+                df_historico_actualizado = add_new_sale(
+                    fecha=fecha_input, importe=importe_input, medio=medio_input, factura=factura_to_save, socio=socio_input
+                )
+            st.success(f"Venta de ${importe_input:,.2f} registrada exitosamente.")
+            generar_resumen_ventas(df_historico_actualizado)
+            
+    else:
+        generar_resumen_ventas(load_ventas_data())
+
+elif menu_selection == "💸 Egresos (Gastos)":
+    st.header("Registro y Control de Gastos/Compras")
+    
+    # Lógica de Inicialización para el filtrado (se ejecuta en cada renderizado)
+    current_provider = st.session_state.get('e_proveedor_input', st.session_state.proveedores[0] if st.session_state.proveedores else None)
+    
+    def filter_egreso_types():
+        # Esta función solo establece el estado de la lista filtrada
+        selected_provider = st.session_state.e_proveedor_input
+        if selected_provider in st.session_state.proveedor_tipo_map:
+            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[selected_provider]
+        else:
+            st.session_state.filtered_egreso_types = st.session_state.egreso_types
+        
+        # Resetear el tipo seleccionado para evitar errores si el valor anterior desaparece
+        if 'e_tipo_input' in st.session_state:
+            st.session_state.e_tipo_input = (st.session_state.filtered_egreso_types[0] 
+                                             if st.session_state.filtered_egreso_types else None)
+        
+    # Inicializar la lista filtrada al cargar la página o al cambiar la vista
+    if 'filtered_egreso_types' not in st.session_state:
+        st.session_state.filtered_egreso_types = st.session_state.egreso_types
+        
+    # Ejecutar el filtrado basado en el proveedor preseleccionado si el menú cambió.
+    # Necesitamos asegurar que el filtro se ejecute antes de dibujar los widgets.
+    
+    # Aquí simulamos el on_change antes de dibujar el formulario principal
+    # Usaremos el valor actual del selectbox para aplicar el filtro al renderizar la página.
+    if current_provider:
+        if current_provider in st.session_state.proveedor_tipo_map:
+            st.session_state.filtered_egreso_types = st.session_state.proveedor_tipo_map[current_provider]
+        else:
+            st.session_state.filtered_egreso_types = st.session_state.egreso_types
+            
+
+    # Formulario de Registro de Egreso
+    with st.form("registro_egreso_form", clear_on_submit=True):
+        st.subheader("1. Registrar Egreso")
+        
+        # Proveedor (Lista dinámica) - El on_change es ahora seguro porque resetea el otro widget
+        proveedor_input = st.selectbox(
+            "🏢 Nombre del Proveedor", 
+            st.session_state.proveedores, 
+            key="e_proveedor_input",
+            on_change=filter_egreso_types # <-- Vuelve on_change, pero la función filter_egreso_types es segura
+        )
+        
+        # Tipo de egreso (Lista dinámica FILTRADA)
+        tipo_input = st.selectbox(
+            "📝 Tipo de Egreso", 
+            st.session_state.filtered_egreso_types, # Usa la lista FILTRADA
+            key="e_tipo_input"
+        )
+        
+        importe_input = st.number_input("💵 Importe a Pagar", min_value=0.0, step=0.01, format="%.2f", key="e_importe_input")
+
+        col_fecha, col_fac = st.columns(2)
+
+        # Fecha de Vencimiento
+        with col_fecha:
+            vencimiento_input = st.date_input("🗓️ Fecha de Vencimiento (o Pago)", datetime.now().date(), key="e_vencimiento_input")
+
+        # Estado de Factura
+        with col_fac:
+            factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado", index=1, horizontal=True, key="e_factura_input")
+            factura_to_save = 'f' if factura_input == 'f' else '' 
+        
+        submitted_egreso = st.form_submit_button("✅ Registrar Egreso")
+
+    if submitted_egreso:
+        if importe_input <= 0:
+            st.error("Debe ingresar un importe válido.")
+        elif not proveedor_input:
+            st.error("Debe seleccionar un proveedor.")
+        elif not tipo_input:
+             st.error("Debe seleccionar un tipo de egreso.")
+        else:
+            with st.spinner("Guardando egreso..."):
+                df_egresos_actualizado = add_new_egreso(
+                    tipo=tipo_input, proveedor=proveedor_input, importe=importe_input, vencimiento=vencimiento_input, factura=factura_to_save
+                )
+            st.success(f"Egreso a {proveedor_input} por ${importe_input:,.2f} registrado exitosamente.")
+            generar_reporte_egresos(df_egresos_actualizado)
+    else:
+        generar_reporte_egresos(load_egresos_data())
