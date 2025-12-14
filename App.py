@@ -9,6 +9,8 @@ from datetime import datetime
 # --- CONFIGURACIÓN Y MAPPING DE DATOS ---
 # ==========================================================
 
+HISTORICO_FILE = 'ventas_historico.csv'
+
 # Mapeo de abreviaturas a nombres completos para los reportes
 MAPEO_MEDIO_COBRO = {
     'e': 'Efectivo',
@@ -23,89 +25,89 @@ MAPEO_SOCIO = {
 }
 
 # Columnas esperadas en el archivo de entrada
-COLUMNAS_INPUT = ['Importe de venta', 'Medio de cobro', 'Factura?', 'Socio']
+COLUMNAS_INPUT_FORM = ['Importe de venta', 'Medio de cobro', 'Factura?', 'Socio']
 
 # ==========================================================
-# --- FUNCIÓN DE CARGA Y TRANSFORMACIÓN ---
+# --- FUNCIONES DE PERSISTENCIA (CSV) ---
 # ==========================================================
 
-def extraer_fecha_de_nombre(nombre_archivo):
-    """Extrae la fecha del nombre del archivo (Ej: V 01-01-26.xlsx)."""
-    # El regex busca el patrón DD-MM-AA
-    match = re.search(r'(\d{2}-\d{2}-\d{2})', nombre_archivo)
-    if match:
-        fecha_str = match.group(1)
-        try:
-            # Asume que el formato es Día-Mes-Año
-            return datetime.strptime(fecha_str, '%d-%m-%y').date()
-        except ValueError:
-            return None
-    else:
-        return None
-
-def cargar_y_transformar_datos(uploaded_file):
-    """Carga, valida y transforma los datos del archivo subido."""
-    
-    fecha_venta = extraer_fecha_de_nombre(uploaded_file.name)
-    if fecha_venta is None:
-        st.error(f"⚠️ Error: No se encontró la fecha con formato DD-MM-AA en el nombre del archivo: **{uploaded_file.name}**")
-        return None, None
-
+def load_data():
+    """Carga el DataFrame histórico o crea uno vacío si no existe."""
     try:
-        # LECTURA DE ARCHIVO XLSX SUBIDO (Requiere openpyxl)
-        df = pd.read_excel(uploaded_file, engine='openpyxl')
+        # Intentamos leer con coma o punto y coma (para compatibilidad)
+        try:
+            df = pd.read_csv(HISTORICO_FILE, sep=';')
+        except Exception:
+            df = pd.read_csv(HISTORICO_FILE, sep=',')
+            
+        # Asegurarse de que 'Fecha' sea un objeto datetime.date
+        df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+        return df
+    except FileNotFoundError:
+        st.error("Error: Archivo de historial no encontrado. Asegúrese de que existe 'ventas_historico.csv'.")
+        # Si falla la carga, retorna un DataFrame vacío con las columnas finales esperadas
+        return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
     except Exception as e:
-        # Si esto falla, el error es 'openpyxl' no está instalado (lo que Packages.txt debería resolver).
-        st.error(f"Error al cargar el archivo de Excel: {e}")
-        st.info("❌ ERROR CLAVE: Asegúrese que la librería 'openpyxl' esté instalada correctamente.")
-        return None, None
+        st.error(f"Error al cargar el historial CSV: {e}")
+        return pd.DataFrame(columns=['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio'])
 
-    if not all(col in df.columns for col in COLUMNAS_INPUT):
-        st.error(f"❌ Error: El archivo no contiene las columnas requeridas: {COLUMNAS_INPUT}")
-        return None, None
-    
-    # Iniciar la transformación
-    
-    # Añadir la fecha a cada fila
-    df['Fecha'] = fecha_venta
-    
-    # Limpiar y estandarizar las abreviaturas (a minúsculas)
-    for col in ['Medio de cobro', 'Factura?', 'Socio']:
-        df[col] = df[col].astype(str).str.lower().str.strip().fillna('')
+def save_data(df):
+    """Guarda el DataFrame en el archivo histórico usando UTF-8."""
+    try:
+        df.to_csv(HISTORICO_FILE, index=False, sep=',') # Usamos coma como separador estándar
+        # Nota: La persistencia real en Streamlit Cloud requiere GitHub/otro servicio, 
+        # pero para el demo guardamos en el mismo archivo del repositorio.
+    except Exception as e:
+        st.error(f"Error al guardar los datos: {e}")
 
-    # Aplicar los mapeos
-    df['Medio de cobro'] = df['Medio de cobro'].map(MAPEO_MEDIO_COBRO).fillna('Desconocido')
-    df['Socio'] = df['Socio'].map(MAPEO_SOCIO).fillna('Desconocido')
-    df['Facturado'] = df['Factura?'].apply(lambda x: 'Facturado' if x == 'f' else 'No Facturado')
+def add_new_sale(fecha, importe, medio, factura, socio):
+    """Agrega la nueva venta al historial y lo guarda."""
+    df_historico = load_data()
     
-    # Conversión de Monto
-    df['Importe de venta'] = pd.to_numeric(df['Importe de venta'], errors='coerce')
-    df = df.dropna(subset=['Importe de venta'])
+    # Crear la fila de datos con las transformaciones
+    facturado_str = 'Facturado' if factura == 'f' else 'No Facturado'
+    medio_str = MAPEO_MEDIO_COBRO.get(medio, 'Desconocido')
+    socio_str = MAPEO_SOCIO.get(socio, 'Desconocido')
+
+    new_data = {
+        'Fecha': fecha,
+        'Importe de venta': importe,
+        'Medio de cobro': medio_str,
+        'Facturado': facturado_str,
+        'Socio': socio_str
+    }
     
-    # Seleccionamos las columnas útiles para el reporte
-    COLUMNAS_REPORTE = ['Fecha', 'Importe de venta', 'Medio de cobro', 'Facturado', 'Socio']
-    return df[COLUMNAS_REPORTE], fecha_venta
+    # Añadir al DataFrame
+    new_row_df = pd.DataFrame([new_data])
+    df_actualizado = pd.concat([df_historico, new_row_df], ignore_index=True)
+
+    # Limpiar columnas por si acaso
+    df_actualizado['Importe de venta'] = pd.to_numeric(df_actualizado['Importe de venta'], errors='coerce')
+    df_final = df_actualizado.dropna(subset=['Importe de venta'])
+    
+    # Guardar los datos actualizados
+    save_data(df_final)
+    return df_final
 
 
 # ==========================================================
-# --- FUNCIÓN DE REPORTE Y DESCARGA (PRINCIPAL) ---
+# --- FUNCIÓN DE REPORTE (PRINCIPAL) ---
 # ==========================================================
 
-def generar_resumen_reporte(df, fecha):
+def generar_resumen_reporte(df, titulo_adicional=""):
     """Genera los DataFrames de resumen y el archivo de descarga."""
     
-    st.subheader(f"Análisis de Ventas del Día: {fecha.strftime('%d-%m-%Y')}")
-    st.markdown("---")
-
-    # 1. Métricas Clave (Totales)
     total_ventas = df['Importe de venta'].sum()
     total_facturado = df[df['Facturado'] == 'Facturado']['Importe de venta'].sum()
     
+    st.subheader(f"📊 Reporte Acumulado de Ventas {titulo_adicional}")
+    st.markdown("---")
+
     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
     
-    col_kpi1.metric("💰 Venta Total del Día", f"${total_ventas:,.2f}")
+    col_kpi1.metric("💰 Venta Total Acumulada", f"${total_ventas:,.2f}")
     col_kpi2.metric("✅ Monto Facturado", f"${total_facturado:,.2f}")
-    col_kpi3.metric("🧾 Registros de Venta", df.shape[0])
+    col_kpi3.metric("🧾 Total de Registros", df.shape[0])
 
     st.markdown("---")
 
@@ -134,28 +136,19 @@ def generar_resumen_reporte(df, fecha):
 
     st.markdown("---")
 
-    # 4. Generación y Descarga del Archivo Excel Consolidado (Requiere openpyxl)
+    # 4. Generación y Descarga del Archivo CSV Consolidado
     
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # Hoja 1: Detalle Completo
-        df.to_excel(writer, sheet_name='Detalle Diario', index=False)
-        # Hoja 2: Resumen por Socio
-        df_socio.to_excel(writer, sheet_name='Resumen Socio', index=False)
-        # Hoja 3: Resumen por Facturación
-        df_fact.to_excel(writer, sheet_name='Resumen Factura', index=False)
-        # Hoja 4: Resumen por Cobro
-        df_cobro.to_excel(writer, sheet_name='Resumen Cobro', index=False)
+    csv_output = df.to_csv(index=False).encode('utf-8')
         
     st.download_button(
-        label="⬇️ Descargar Reporte Consolidado en Excel",
-        data=buffer.getvalue(),
-        file_name=f"Reporte_Ventas_Diario_{fecha}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="descarga_excel_diario"
+        label="⬇️ Descargar Historial Completo en CSV",
+        data=csv_output,
+        file_name=f"Historial_Ventas_Acumulado_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        key="descarga_csv_historico"
     )
-    st.success("Reporte generado. Revise el archivo Excel que contiene el detalle y los 4 resúmenes en hojas separadas.")
-    st.dataframe(df.head(), use_container_width=True, caption="Detalle de las primeras filas cargadas")
+    st.success("Historial guardado y disponible para descarga.")
+    st.dataframe(df.tail(10), use_container_width=True, caption="Últimas 10 filas registradas")
 
 
 # ==========================================================
@@ -164,37 +157,72 @@ def generar_resumen_reporte(df, fecha):
 
 st.set_page_config(page_title="GestionSol - Reporte Diario", layout="wide")
 
-st.title("GestionSol: Reporte de Ventas Diario 📈")
-st.markdown("Cargue el archivo de ventas diario (**XLSX**) para generar un reporte resumido instantáneo.")
+st.title("GestionSol: Registro y Reporte de Ventas 📈")
+st.markdown("Registre cada venta para mantener un historial acumulado y generar reportes instantáneos.")
 st.markdown("---")
 
 
-# Contenedor para la carga de archivos
-with st.container(border=True):
-    st.subheader("1. Subir Archivo Diario")
-    st.info("⚠️ El archivo debe ser formato **XLSX** y el nombre debe contener la fecha en formato **DD-MM-AA** (Ej: V 01-01-26.xlsx)")
+# Formulario de Registro
+with st.form("registro_venta_form", clear_on_submit=True):
+    st.subheader("1. Registrar Nueva Venta")
     
-    uploaded_file = st.file_uploader(
-        "Archivo de Ventas (Excel)", 
-        type=['xlsx', 'xls'], 
-        key="ventas_file"
-    )
+    fecha_input = st.date_input("🗓️ Fecha de la Venta", datetime.now().date())
+    
+    # Campo para el importe
+    importe_input = st.number_input("💵 Importe de venta", min_value=0.0, step=0.01, format="%.2f", key="importe_input")
 
-if uploaded_file is not None:
-    # 2. Procesar Datos
-    with st.spinner("Procesando y generando reporte..."):
-        df_ventas_dia, fecha_procesada = cargar_y_transformar_datos(uploaded_file)
+    # Selección de medio de cobro
+    medio_options = {'e': 'Efectivo', 't': 'Transferencia', 'd': 'Débito', 'c': 'Crédito'}
+    medio_input = st.selectbox("💳 Medio de cobro", list(medio_options.keys()), format_func=lambda x: medio_options[x])
+
+    col_fac, col_soc = st.columns(2)
     
-    if df_ventas_dia is not None:
-        # 3. Mostrar Resumen y Descarga
-        generar_resumen_reporte(df_ventas_dia, fecha_procesada)
+    # Selección de facturación
+    with col_fac:
+        factura_input = st.radio("🧾 ¿Factura?", ['f', 'no'], format_func=lambda x: "Facturado (f)" if x == 'f' else "No Facturado (dejar vacío)", index=1, horizontal=True)
+        # Convertir 'no' a vacío para la lógica interna (simulando que la celda queda vacía)
+        factura_to_save = 'f' if factura_input == 'f' else '' 
+
+    # Selección de socio
+    with col_soc:
+        socio_options = {'f': 'Fernando', 'n': 'Nacho'}
+        socio_input = st.radio("👤 Socio", list(socio_options.keys()), format_func=lambda x: socio_options[x], horizontal=True)
+    
+    # Botón de envío
+    submitted = st.form_submit_button("✅ Registrar Venta")
+
+if submitted:
+    if importe_input <= 0:
+        st.error("El importe de la venta debe ser mayor a cero.")
+    else:
+        # 2. Procesar y Guardar Datos
+        with st.spinner(f"Guardando venta del {fecha_input.strftime('%d-%m-%Y')}..."):
+            df_historico_actualizado = add_new_sale(
+                fecha=fecha_input,
+                importe=importe_input,
+                medio=medio_input,
+                factura=factura_to_save,
+                socio=socio_input
+            )
         
+        st.success(f"Venta de ${importe_input:,.2f} registrada exitosamente.")
+        
+        # 3. Mostrar Reporte basado en el historial completo
+        generar_resumen_reporte(df_historico_actualizado)
+        
+else:
+    # Si no hay envío, muestra el reporte del historial actual al cargar la página
+    df_historico = load_data()
+    if not df_historico.empty:
+        generar_resumen_reporte(df_historico)
+    else:
+        st.info("Aún no hay ventas registradas. Use el formulario para añadir la primera venta.")
+
 # --- Instrucciones y Ayuda ---
-with st.expander("📚 Requisitos y Formato de Archivo"):
+with st.expander("📚 Detalles de las Abreviaturas"):
     st.markdown("""
-    El archivo subido debe ser formato **XLSX**. Las cuatro columnas requeridas son:
-    * **`Importe de venta`**: El valor numérico de la venta.
-    * **`Medio de cobro`**: Abreviaturas permitidas: **`e`** (Efectivo), **`t`** (Transferencia), **`d`** (Débito), **`c`** (Crédito).
-    * **`Factura?`**: Ponga **`f`** si está facturada, y deje la celda **vacía** si no lo está.
-    * **`Socio`**: Abreviaturas permitidas: **`f`** (Fernando) o **`n`** (Nacho).
+    Los mapeos usados para el registro son:
+    * **Medio de cobro**: `e` (Efectivo), `t` (Transferencia), `d` (Débito), `c` (Crédito).
+    * **Factura?**: `f` (Facturado) o "No Facturado".
+    * **Socio**: `f` (Fernando) o `n` (Nacho).
     """)
